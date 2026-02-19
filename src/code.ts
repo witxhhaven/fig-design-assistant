@@ -1,0 +1,328 @@
+import { buildSceneContext } from "./scene";
+import { callClaude, parseAIResponse, ConversationManager } from "./ai";
+import { executeWithSafety } from "./executor";
+import { NodeSummary, AIResponse } from "./types";
+
+// Show UI
+figma.showUI(__html__, { width: 360, height: 600, themeColors: true });
+
+// State
+let apiKey: string | null = null;
+let model = "claude-sonnet-4-6";
+let pendingResponse: AIResponse | null = null;
+let lastUserRequest = "";
+let currentAbortController: AbortController | null = null;
+const conversation = new ConversationManager();
+
+// ── Session logging ──
+
+const sessionId = new Date().toISOString().replace(/[:.]/g, "-");
+const sessionLog: {
+  sessionId: string;
+  startedAt: string;
+  fileName: string;
+  entries: {
+    timestamp: string;
+    type: string;
+    role?: string;
+    text?: string;
+    summary?: string;
+    code?: string;
+    warnings?: string[];
+    error?: string;
+    userRequest?: string;
+  }[];
+}  = {
+  sessionId,
+  startedAt: new Date().toISOString(),
+  fileName: "",
+  entries: [],
+};
+
+function logEntry(entry: typeof sessionLog.entries[0]) {
+  entry.timestamp = new Date().toISOString();
+  sessionLog.entries.push(entry);
+  saveLog();
+  // If it's an error type, also log to the error tracker
+  if (entry.type === "error" || entry.type === "execution_error" || entry.type === "parse_error") {
+    logError(entry);
+  }
+}
+
+async function saveLog() {
+  try {
+    sessionLog.fileName = figma.root.name;
+    fetch("http://localhost:3001/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sessionLog),
+    }).catch(function() {});
+    await figma.clientStorage.setAsync("log_" + sessionId, sessionLog);
+    var index: string[] =
+      (await figma.clientStorage.getAsync("log_index")) || [];
+    if (index.indexOf(sessionId) === -1) {
+      index.push(sessionId);
+      await figma.clientStorage.setAsync("log_index", index);
+    }
+  } catch (_e) {}
+}
+
+function logError(entry: any) {
+  fetch("http://localhost:3001/error", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: sessionId,
+      fileName: figma.root.name,
+      timestamp: entry.timestamp,
+      errorType: entry.type,
+      error: entry.error || null,
+      code: entry.code || null,
+      summary: entry.summary || null,
+      userRequest: entry.userRequest || null,
+    }),
+  }).catch(function() {});
+}
+
+// No export/download needed — log server saves to logs/ folder automatically
+
+// ── Load settings on startup ──
+
+async function loadSettings() {
+  apiKey = (await figma.clientStorage.getAsync("apiKey")) || null;
+  model =
+    (await figma.clientStorage.getAsync("model")) || "claude-sonnet-4-6";
+  figma.ui.postMessage({
+    type: "SETTINGS",
+    hasApiKey: !!apiKey,
+    model,
+  });
+}
+
+loadSettings();
+
+// ── Selection & page change listeners ──
+
+function sendSelectionState() {
+  const nodes: NodeSummary[] = figma.currentPage.selection.map(n => ({
+    id: n.id,
+    name: n.name,
+    type: n.type,
+  }));
+  figma.ui.postMessage({
+    type: "SELECTION_CHANGED",
+    nodes,
+    pageName: figma.currentPage.name,
+  });
+}
+
+figma.on("selectionchange", sendSelectionState);
+figma.on("currentpagechange", sendSelectionState);
+
+// Send initial state after UI is ready
+setTimeout(sendSelectionState, 100);
+
+// ── Handle messages from UI ──
+
+figma.ui.onmessage = async (msg: any) => {
+  switch (msg.type) {
+    case "CHAT_MESSAGE":
+      await handleChatMessage(msg.text);
+      break;
+
+    case "CONFIRM":
+      await handleConfirm();
+      break;
+
+    case "CANCEL":
+      pendingResponse = null;
+      logEntry({ type: "cancel", timestamp: "" });
+      break;
+
+    case "ABORT":
+      if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+      }
+      logEntry({ type: "abort", timestamp: "" });
+      break;
+
+    case "SET_API_KEY":
+      await figma.clientStorage.setAsync("apiKey", msg.key);
+      apiKey = msg.key;
+      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: true, model });
+      break;
+
+    case "SET_MODEL":
+      await figma.clientStorage.setAsync("model", msg.model);
+      model = msg.model;
+      break;
+
+    case "GET_SETTINGS":
+      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: !!apiKey, model });
+      break;
+
+    case "RESIZE":
+      figma.ui.resize(msg.width, msg.height);
+      break;
+
+  }
+};
+
+// ── Chat handler ──
+
+async function handleChatMessage(text: string) {
+  if (!apiKey) {
+    figma.ui.postMessage({
+      type: "ERROR",
+      message: "Please set your API key in settings first.",
+    });
+    return;
+  }
+
+  lastUserRequest = text;
+  logEntry({ type: "user_message", role: "user", text, timestamp: "" });
+  figma.ui.postMessage({ type: "AI_THINKING" });
+
+  // Create abort controller for this request
+  currentAbortController = new AbortController();
+  var signal = currentAbortController.signal;
+
+  try {
+    // Build scene context
+    const sceneContext = buildSceneContext();
+    const sceneJson = JSON.stringify(sceneContext, null, 2);
+
+    // Add to conversation history
+    conversation.addUserMessage(text, sceneJson);
+
+    // Call Claude
+    const rawResponse = await callClaude(
+      conversation.getMessages(),
+      apiKey,
+      model,
+      signal
+    );
+
+    conversation.addAssistantMessage(rawResponse);
+
+    // Parse response
+    let aiResponse: AIResponse;
+    try {
+      aiResponse = parseAIResponse(rawResponse);
+    } catch (_parseError: any) {
+      // Log parse error and retry
+      logEntry({
+        type: "parse_error",
+        error: "Invalid JSON from AI: " + (_parseError.message || String(_parseError)),
+        userRequest: lastUserRequest,
+        timestamp: "",
+      });
+      figma.ui.postMessage({ type: "AI_THINKING" });
+
+      const retryMessages = [
+        ...conversation.getMessages(),
+        {
+          role: "user" as const,
+          content:
+            "Your previous response was not valid JSON. Please respond with ONLY valid JSON in the required format.",
+        },
+      ];
+
+      const retryResponse = await callClaude(retryMessages, apiKey, model, signal);
+      conversation.addAssistantMessage(retryResponse);
+      aiResponse = parseAIResponse(retryResponse);
+    }
+
+    // Handle chat message (no code, just conversation)
+    if (aiResponse.message && !aiResponse.code) {
+      logEntry({
+        type: "ai_message",
+        role: "assistant",
+        text: aiResponse.message,
+        timestamp: "",
+      });
+      figma.ui.postMessage({
+        type: "AI_CHAT",
+        text: aiResponse.message,
+      });
+      return;
+    }
+
+    // Handle code response
+    if (aiResponse.code && aiResponse.summary) {
+      logEntry({
+        type: "ai_proposal",
+        role: "assistant",
+        summary: aiResponse.summary,
+        code: aiResponse.code,
+        warnings: aiResponse.warnings,
+        timestamp: "",
+      });
+      pendingResponse = aiResponse;
+      figma.ui.postMessage({
+        type: "AI_RESPONSE",
+        summary: aiResponse.summary,
+        code: aiResponse.code,
+        warnings: aiResponse.warnings,
+      });
+    }
+  } catch (error: any) {
+    let message = error.message || String(error);
+
+    if (message === "INVALID_API_KEY") {
+      message = "Invalid API key. Get yours at console.anthropic.com";
+    } else if (message === "RATE_LIMITED") {
+      message =
+        "Rate limited by Claude API. Please wait a moment and try again.";
+    } else if (
+      message.includes("Failed to fetch") ||
+      message.includes("NetworkError")
+    ) {
+      message = "Can't reach Claude API. Check your connection.";
+    }
+
+    logEntry({ type: "error", error: message, userRequest: lastUserRequest, timestamp: "" });
+    figma.ui.postMessage({ type: "ERROR", message });
+  }
+}
+
+// ── Confirm handler ──
+
+async function handleConfirm() {
+  if (!pendingResponse || !pendingResponse.code) return;
+
+  const response = pendingResponse;
+  pendingResponse = null;
+
+  const result = await executeWithSafety(
+    response.code,
+    response.warnings.length > 0
+  );
+
+  if (result.success) {
+    logEntry({
+      type: "execution_success",
+      summary: response.summary || "Changes applied",
+      code: response.code,
+      timestamp: "",
+    });
+    figma.ui.postMessage({
+      type: "EXECUTION_SUCCESS",
+      summary: response.summary || "Changes applied",
+    });
+  } else {
+    logEntry({
+      type: "execution_error",
+      code: response.code,
+      error: result.error,
+      summary: response.summary || "",
+      userRequest: lastUserRequest,
+      timestamp: "",
+    });
+    figma.ui.postMessage({
+      type: "EXECUTION_ERROR",
+      error: `The code hit an error: ${result.error}. Partial changes can be undone with Cmd+Z.`,
+    });
+  }
+}
