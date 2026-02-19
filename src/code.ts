@@ -11,7 +11,6 @@ let apiKey: string | null = null;
 let model = "claude-sonnet-4-6";
 let pendingResponse: AIResponse | null = null;
 let lastUserRequest = "";
-let currentAbortController: AbortController | null = null;
 const conversation = new ConversationManager();
 
 // ── Session logging ──
@@ -88,6 +87,11 @@ function logError(entry: any) {
 
 // ── Load settings on startup ──
 
+function maskKey(key: string | null): string | null {
+  if (!key || key.length < 10) return null;
+  return key.slice(0, 5) + "..." + key.slice(-5);
+}
+
 async function loadSettings() {
   apiKey = (await figma.clientStorage.getAsync("apiKey")) || null;
   model =
@@ -95,6 +99,7 @@ async function loadSettings() {
   figma.ui.postMessage({
     type: "SETTINGS",
     hasApiKey: !!apiKey,
+    keyPreview: maskKey(apiKey),
     model,
   });
 }
@@ -140,17 +145,13 @@ figma.ui.onmessage = async (msg: any) => {
       break;
 
     case "ABORT":
-      if (currentAbortController) {
-        currentAbortController.abort();
-        currentAbortController = null;
-      }
       logEntry({ type: "abort", timestamp: "" });
       break;
 
     case "SET_API_KEY":
       await figma.clientStorage.setAsync("apiKey", msg.key);
       apiKey = msg.key;
-      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: true, model });
+      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: true, keyPreview: maskKey(apiKey), model });
       break;
 
     case "SET_MODEL":
@@ -159,15 +160,57 @@ figma.ui.onmessage = async (msg: any) => {
       break;
 
     case "GET_SETTINGS":
-      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: !!apiKey, model });
+      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: !!apiKey, keyPreview: maskKey(apiKey), model });
       break;
 
     case "RESIZE":
       figma.ui.resize(msg.width, msg.height);
       break;
 
+    case "TEST_CONNECTION":
+      await testConnection();
+      break;
+
   }
 };
+
+// ── Test connection ──
+
+async function testConnection() {
+  if (!apiKey) {
+    figma.ui.postMessage({ type: "TEST_CONNECTION_RESULT", success: false, error: "No API key set" });
+    return;
+  }
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    });
+
+    if (response.ok) {
+      figma.ui.postMessage({ type: "TEST_CONNECTION_RESULT", success: true });
+    } else if (response.status === 401) {
+      figma.ui.postMessage({ type: "TEST_CONNECTION_RESULT", success: false, error: "Invalid API key" });
+    } else if (response.status === 429) {
+      figma.ui.postMessage({ type: "TEST_CONNECTION_RESULT", success: false, error: "Rate limited — try again later" });
+    } else {
+      figma.ui.postMessage({ type: "TEST_CONNECTION_RESULT", success: false, error: `API error (${response.status})` });
+    }
+  } catch (error: any) {
+    figma.ui.postMessage({ type: "TEST_CONNECTION_RESULT", success: false, error: error.message || "Network error" });
+  }
+}
 
 // ── Chat handler ──
 
@@ -184,10 +227,6 @@ async function handleChatMessage(text: string) {
   logEntry({ type: "user_message", role: "user", text, timestamp: "" });
   figma.ui.postMessage({ type: "AI_THINKING" });
 
-  // Create abort controller for this request
-  currentAbortController = new AbortController();
-  var signal = currentAbortController.signal;
-
   try {
     // Build scene context
     const sceneContext = buildSceneContext();
@@ -200,8 +239,7 @@ async function handleChatMessage(text: string) {
     const rawResponse = await callClaude(
       conversation.getMessages(),
       apiKey,
-      model,
-      signal
+      model
     );
 
     conversation.addAssistantMessage(rawResponse);
@@ -229,7 +267,7 @@ async function handleChatMessage(text: string) {
         },
       ];
 
-      const retryResponse = await callClaude(retryMessages, apiKey, model, signal);
+      const retryResponse = await callClaude(retryMessages, apiKey, model);
       conversation.addAssistantMessage(retryResponse);
       aiResponse = parseAIResponse(retryResponse);
     }
@@ -266,12 +304,19 @@ async function handleChatMessage(text: string) {
         code: aiResponse.code,
         warnings: aiResponse.warnings,
       });
+      return;
     }
+
+    // Fallback: response had neither message nor code
+    figma.ui.postMessage({
+      type: "ERROR",
+      message: "Unexpected response from AI. Please try again.",
+    });
   } catch (error: any) {
     let message = error.message || String(error);
 
     if (message === "INVALID_API_KEY") {
-      message = "Invalid API key. Get yours at console.anthropic.com";
+      message = "Invalid API key. Please update your key in settings.";
     } else if (message === "RATE_LIMITED") {
       message =
         "Rate limited by Claude API. Please wait a moment and try again.";

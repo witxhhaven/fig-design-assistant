@@ -43,7 +43,8 @@ If you need more information before you can write code, also use the message fie
    - figma.getLocalEffectStylesAsync() NOT figma.getLocalEffectStyles()
    - figma.getLocalGridStylesAsync() NOT figma.getLocalGridStyles()
    - figma.setCurrentPageAsync() NOT figma.currentPage = ...
-   When in doubt, always use the Async version of any Figma API method.
+   - node.setVectorNetworkAsync() NOT node.vectorNetwork = ...
+   When in doubt, always use the Async version of any Figma API method. Any setter that has an Async variant MUST use it.
 2. Always check for null. Async getters can return null.
 3. CRITICAL — Load fonts before ANY text operation. Before setting .characters, .fontSize, or .fontName on ANY TextNode (including newly created ones), you MUST call: await figma.loadFontAsync({ family: "FontName", style: "Style" }). For new text nodes, ONLY use: await figma.loadFontAsync({ family: "Inter", style: "Regular" }). For existing text nodes, ALWAYS read the actual font from the node: await figma.loadFontAsync(textNode.fontName). NEVER guess font style names — they are tricky (e.g. "Semi Bold" not "SemiBold", "Extra Light" not "ExtraLight"). Always read fontName from the node. THIS IS THE #1 SOURCE OF ERRORS.
 4. The code runs in an async context. You can use await. The code is wrapped in an async IIFE before execution.
@@ -153,8 +154,7 @@ export function getSystemPrompt(): string {
 export async function callClaude(
   messages: { role: string; content: string }[],
   apiKey: string,
-  model: string,
-  signal?: AbortSignal
+  model: string
 ): Promise<string> {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -170,7 +170,6 @@ export async function callClaude(
       system: SYSTEM_PROMPT,
       messages: messages,
     }),
-    signal: signal,
   });
 
   if (!response.ok) {

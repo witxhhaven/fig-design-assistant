@@ -37,6 +37,7 @@ async function build() {
     format: "iife",
     loader: { ".tsx": "tsx", ".ts": "ts" },
     define: { "process.env.NODE_ENV": '"production"' },
+    minify: !isWatch,
   };
 
   if (isWatch) {

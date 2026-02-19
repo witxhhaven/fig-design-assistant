@@ -2,9 +2,13 @@ import React, { useState } from "react";
 
 interface SettingsProps {
   hasApiKey: boolean;
+  keyPreview: string | null;
   model: string;
+  connectionStatus: "idle" | "testing" | "success" | "error";
+  connectionError?: string;
   onSetApiKey: (key: string) => void;
   onSetModel: (model: string) => void;
+  onTestConnection: () => void;
   onClose?: () => void;
 }
 
@@ -16,9 +20,13 @@ const MODELS = [
 
 export function Settings({
   hasApiKey,
+  keyPreview,
   model,
+  connectionStatus,
+  connectionError,
   onSetApiKey,
   onSetModel,
+  onTestConnection,
   onClose,
 }: SettingsProps) {
   const [keyInput, setKeyInput] = useState("");
@@ -73,6 +81,26 @@ export function Settings({
           </button>
         </div>
         {saved && <p className="settings-saved">API key saved</p>}
+        {hasApiKey && keyPreview && !saved && (
+          <p className="settings-key-preview">Current key: <code>{keyPreview}</code></p>
+        )}
+        {hasApiKey && (
+          <div className="settings-test-row">
+            <button
+              className="btn btn-secondary btn-small"
+              onClick={onTestConnection}
+              disabled={connectionStatus === "testing"}
+            >
+              {connectionStatus === "testing" ? "Testing..." : "Test Connection"}
+            </button>
+            {connectionStatus === "success" && (
+              <span className="test-success">Connected</span>
+            )}
+            {connectionStatus === "error" && (
+              <span className="test-error">{connectionError || "Connection failed"}</span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="settings-section">

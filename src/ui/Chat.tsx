@@ -16,6 +16,7 @@ interface ChatProps {
   onSendMessage: (text: string) => void;
   onConfirm: () => void;
   onCancel: () => void;
+  onStop: () => void;
   isThinking: boolean;
   isExecuting: boolean;
   hasPendingAction: boolean;
@@ -26,6 +27,7 @@ export function Chat({
   onSendMessage,
   onConfirm,
   onCancel,
+  onStop,
   isThinking,
   isExecuting,
   hasPendingAction,
@@ -37,6 +39,17 @@ export function Chat({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isThinking) {
+        e.preventDefault();
+        onStop();
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [isThinking, onStop]);
 
   const handleSubmit = () => {
     const text = input.trim();
@@ -52,6 +65,10 @@ export function Chat({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
+    }
+    if (e.key === "Escape" && isThinking) {
+      e.preventDefault();
+      onStop();
     }
   };
 
@@ -187,16 +204,28 @@ export function Chat({
           disabled={isInputDisabled}
           rows={1}
         />
-        <button
-          className="send-btn"
-          onClick={handleSubmit}
-          disabled={isInputDisabled || !input.trim()}
-          title="Send"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M1.5 1.5l13 6.5-13 6.5v-5l8-1.5-8-1.5v-5z" />
-          </svg>
-        </button>
+        {isThinking ? (
+          <button
+            className="send-btn stop-btn"
+            onClick={onStop}
+            title="Stop (Esc)"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+              <rect x="2" y="2" width="10" height="10" rx="2" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            className="send-btn"
+            onClick={handleSubmit}
+            disabled={isInputDisabled || !input.trim()}
+            title="Send"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M1.5 1.5l13 6.5-13 6.5v-5l8-1.5-8-1.5v-5z" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

@@ -25,12 +25,15 @@ function App() {
   const [selectedNodes, setSelectedNodes] = useState<NodeSummary[]>([]);
   const [pageName, setPageName] = useState("");
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [keyPreview, setKeyPreview] = useState<string | null>(null);
   const [model, setModel] = useState("claude-sonnet-4-6");
   const [isThinking, setIsThinking] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(
     null
   );
   const [isExecuting, setIsExecuting] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [connectionError, setConnectionError] = useState<string | undefined>();
 
   // Listen for messages from sandbox
   useEffect(() => {
@@ -46,6 +49,7 @@ function App() {
 
         case "SETTINGS":
           setHasApiKey(msg.hasApiKey);
+          setKeyPreview(msg.keyPreview || null);
           setModel(msg.model);
           if (!msg.hasApiKey) setView("settings");
           break;
@@ -100,7 +104,19 @@ function App() {
         case "ERROR":
           setIsThinking(false);
           setIsExecuting(false);
-          setMessages(prev => [...prev, { type: "error", text: msg.message }]);
+          if (msg.message) {
+            setMessages(prev => [...prev, { type: "error", text: msg.message }]);
+          }
+          break;
+
+        case "TEST_CONNECTION_RESULT":
+          if (msg.success) {
+            setConnectionStatus("success");
+            setConnectionError(undefined);
+          } else {
+            setConnectionStatus("error");
+            setConnectionError(msg.error);
+          }
           break;
 
       }
@@ -111,12 +127,23 @@ function App() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  const handleTestConnection = useCallback(() => {
+    setConnectionStatus("testing");
+    setConnectionError(undefined);
+    parent.postMessage({ pluginMessage: { type: "TEST_CONNECTION" } }, "*");
+  }, []);
+
   const sendMessage = useCallback((text: string) => {
     setMessages(prev => [...prev, { type: "user", text }]);
     parent.postMessage(
       { pluginMessage: { type: "CHAT_MESSAGE", text } },
       "*"
     );
+  }, []);
+
+  const handleStop = useCallback(() => {
+    setIsThinking(false);
+    parent.postMessage({ pluginMessage: { type: "ABORT" } }, "*");
   }, []);
 
   const handleConfirm = useCallback(() => {
@@ -166,24 +193,35 @@ function App() {
       <div className="app">
         <header className="header">
           <h1>AI Design Copilot</h1>
-          {hasApiKey && (
-            <button
-              className="icon-btn"
-              onClick={() => setView("chat")}
-              title="Back to chat"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                <path d="M11.5 2.5l-9 9M2.5 2.5l9 9" stroke="currentColor" strokeWidth="1.5" fill="none" />
-              </svg>
-            </button>
-          )}
+          <div className="header-actions">
+            {hasApiKey && (
+              <span className="api-key-badge" title="API key saved">
+                <span className="api-key-dot" />
+                API connected
+              </span>
+            )}
+            {hasApiKey && (
+              <button
+                className="icon-btn"
+                onClick={() => setView("chat")}
+                title="Back to chat"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                  <path d="M11.5 2.5l-9 9M2.5 2.5l9 9" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                </svg>
+              </button>
+            )}
+          </div>
         </header>
         <Settings
           hasApiKey={hasApiKey}
+          keyPreview={keyPreview}
           model={model}
+          connectionStatus={connectionStatus}
+          connectionError={connectionError}
           onSetApiKey={handleSetApiKey}
           onSetModel={handleSetModel}
-
+          onTestConnection={handleTestConnection}
           onClose={hasApiKey ? () => setView("chat") : undefined}
         />
         <ResizeHandle />
@@ -195,20 +233,28 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>AI Design Copilot</h1>
-        <button
-          className="icon-btn"
-          onClick={() => setView("settings")}
-          title="Settings"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M6.5 1h3l.4 2 .9.4 1.8-1.1 2.1 2.1-1.1 1.8.4.9 2 .4v3l-2 .4-.4.9 1.1 1.8-2.1 2.1-1.8-1.1-.9.4-.4 2h-3l-.4-2-.9-.4-1.8 1.1-2.1-2.1 1.1-1.8-.4-.9-2-.4v-3l2-.4.4-.9L1.3 3.4l2.1-2.1 1.8 1.1.9-.4L6.5 1z"
-              stroke="currentColor"
-              strokeWidth="1.2"
-            />
-            <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2" />
-          </svg>
-        </button>
+        <div className="header-actions">
+          {hasApiKey && (
+            <span className="api-key-badge" title="API key saved">
+              <span className="api-key-dot" />
+              API connected
+            </span>
+          )}
+          <button
+            className="icon-btn"
+            onClick={() => setView("settings")}
+            title="Settings"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="10.5" y1="3.5" x2="15.5" y2="3.5" />
+              <line x1=".5" y1="3.5" x2="2.5" y2="3.5" />
+              <line x1="5.5" y1="12.5" x2=".5" y2="12.5" />
+              <line x1="15.5" y1="12.5" x2="13.5" y2="12.5" />
+              <circle cx="5" cy="3.5" r="2.5" />
+              <circle cx="11" cy="12.5" r="2.5" />
+            </svg>
+          </button>
+        </div>
       </header>
       <ContextBadge nodes={selectedNodes} pageName={pageName} />
       <Chat
@@ -216,6 +262,7 @@ function App() {
         onSendMessage={sendMessage}
         onConfirm={handleConfirm}
         onCancel={handleCancel}
+        onStop={handleStop}
         isThinking={isThinking}
         isExecuting={isExecuting}
         hasPendingAction={!!pendingAction}

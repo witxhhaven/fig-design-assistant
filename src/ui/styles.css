@@ -53,16 +53,45 @@ a:hover {
   color: var(--figma-color-text, #333);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.api-key-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #1e7e34;
+  background: #e6f4ea;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.api-key-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1e7e34;
+}
+
 .icon-btn {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px;
+  padding: 6px;
   border-radius: 4px;
   color: var(--figma-color-text-secondary, #666);
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
 }
 .icon-btn:hover {
   background: var(--figma-color-bg-hover, #f0f0f0);
@@ -113,7 +142,7 @@ a:hover {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
 }
 
 /* ── Empty State ── */
@@ -172,9 +201,7 @@ a:hover {
 }
 
 .message-ai .message-text {
-  background: var(--figma-color-bg-secondary, #f5f5f5);
-  padding: 8px 12px;
-  border-radius: 8px 8px 8px 2px;
+  padding: 8px 0;
   word-break: break-word;
 }
 
@@ -409,6 +436,14 @@ a:hover {
   cursor: not-allowed;
 }
 
+.stop-btn {
+  background: #d93025;
+}
+
+.stop-btn:hover {
+  background: #b8271e;
+}
+
 /* ── Settings ── */
 .settings {
   flex: 1;
@@ -463,6 +498,43 @@ a:hover {
 .settings-saved {
   font-size: 11px;
   color: #1e7e34;
+  font-weight: 500;
+}
+
+.settings-key-preview {
+  font-size: 11px;
+  color: var(--figma-color-text-secondary, #666);
+}
+
+.settings-key-preview code {
+  font-family: monospace;
+  background: var(--figma-color-bg-secondary, #f5f5f5);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.settings-test-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-small {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.test-success {
+  font-size: 11px;
+  color: #1e7e34;
+  font-weight: 500;
+}
+
+.test-error {
+  font-size: 11px;
+  color: #d93025;
   font-weight: 500;
 }
 
