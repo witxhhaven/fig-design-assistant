@@ -22,6 +22,13 @@ interface ChatProps {
   hasPendingAction: boolean;
 }
 
+const EXAMPLES = [
+  "Make the header blue",
+  "Change text to 'Welcome'",
+  "Create a card with auto layout",
+  "Delete the footer",
+];
+
 export function Chat({
   messages,
   onSendMessage,
@@ -33,8 +40,22 @@ export function Chat({
   hasPendingAction,
 }: ChatProps) {
   const [input, setInput] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [draft, setDraft] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const resizeInput = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+  };
+
+  useEffect(() => {
+    resizeInput();
+  }, [input]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,6 +75,9 @@ export function Chat({
   const handleSubmit = () => {
     const text = input.trim();
     if (!text || isThinking || isExecuting || hasPendingAction) return;
+    setHistory(prev => [...prev, text]);
+    setHistoryIndex(-1);
+    setDraft("");
     setInput("");
     onSendMessage(text);
     if (inputRef.current) {
@@ -70,13 +94,45 @@ export function Chat({
       e.preventDefault();
       onStop();
     }
+    // Option+Up: cycle to older messages
+    if (e.key === "ArrowUp" && e.altKey && history.length > 0) {
+      e.preventDefault();
+      if (historyIndex === -1) {
+        setDraft(input);
+        const newIndex = history.length - 1;
+        setHistoryIndex(newIndex);
+        setInput(history[newIndex]);
+      } else if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setInput(history[newIndex]);
+      }
+    }
+    // Option+Down: cycle to newer messages or restore draft
+    if (e.key === "ArrowDown" && e.altKey && historyIndex !== -1) {
+      e.preventDefault();
+      if (historyIndex < history.length - 1) {
+        const newIndex = historyIndex + 1;
+        setHistoryIndex(newIndex);
+        setInput(history[newIndex]);
+      } else {
+        setHistoryIndex(-1);
+        setInput(draft);
+      }
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    if (historyIndex !== -1) {
+      setHistoryIndex(-1);
+      setDraft("");
+    }
+  };
+
+  const handleExampleClick = (text: string) => {
+    if (isThinking || isExecuting || hasPendingAction) return;
+    onSendMessage(text);
   };
 
   const isInputDisabled = isThinking || isExecuting || hasPendingAction;
@@ -86,21 +142,21 @@ export function Chat({
       <div className="messages">
         {messages.length === 0 && !isThinking && (
           <div className="empty-state">
+            <div className="empty-icon">&#10024;</div>
             <p className="empty-title">What would you like to change?</p>
             <p className="empty-hint">
-              Select layers in Figma, then describe what you want:
+              Select layers in Figma, then describe what you want
             </p>
             <div className="empty-examples">
-              <span className="example">
-                "Make the header background blue"
-              </span>
-              <span className="example">
-                "Change the title text to 'Welcome'"
-              </span>
-              <span className="example">
-                "Create a new card with auto layout"
-              </span>
-              <span className="example">"Delete the footer section"</span>
+              {EXAMPLES.map((ex, i) => (
+                <span
+                  key={i}
+                  className="example-chip"
+                  onClick={() => handleExampleClick(ex)}
+                >
+                  {ex}
+                </span>
+              ))}
             </div>
           </div>
         )}
@@ -192,40 +248,42 @@ export function Chat({
       </div>
 
       <div className="input-bar">
-        <textarea
-          ref={inputRef}
-          className="chat-input"
-          placeholder={
-            isInputDisabled ? "Waiting..." : "Type a message..."
-          }
-          value={input}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          disabled={isInputDisabled}
-          rows={1}
-        />
-        {isThinking ? (
-          <button
-            className="send-btn stop-btn"
-            onClick={onStop}
-            title="Stop (Esc)"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="2" y="2" width="10" height="10" rx="2" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            className="send-btn"
-            onClick={handleSubmit}
-            disabled={isInputDisabled || !input.trim()}
-            title="Send"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M1.5 1.5l13 6.5-13 6.5v-5l8-1.5-8-1.5v-5z" />
-            </svg>
-          </button>
-        )}
+        <div className={`input-wrapper ${isInputDisabled ? "input-wrapper-disabled" : ""}`}>
+          <textarea
+            ref={inputRef}
+            className="chat-input"
+            placeholder={
+              isInputDisabled ? "Waiting..." : "Describe what you want..."
+            }
+            value={input}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            disabled={isInputDisabled}
+            rows={1}
+          />
+          {isThinking ? (
+            <button
+              className="send-btn stop-btn"
+              onClick={onStop}
+              title="Stop (Esc)"
+            >
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
+                <rect x="2" y="2" width="10" height="10" rx="2" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              className="send-btn"
+              onClick={handleSubmit}
+              disabled={isInputDisabled || !input.trim()}
+              title="Send"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M3 13.5L13.5 8 3 2.5v4.3l5.5 1.2L3 9.2v4.3z" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

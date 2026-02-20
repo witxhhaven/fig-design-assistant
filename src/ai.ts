@@ -109,7 +109,19 @@ Set sizing (use layoutSizing, NOT primaryAxisSizingMode/counterAxisSizingMode):
   frame.layoutSizingHorizontal = "FIXED" | "HUG" | "FILL"
   frame.layoutSizingVertical = "FIXED" | "HUG" | "FILL"
   // NEVER use counterAxisSizingMode or primaryAxisSizingMode — they are deprecated.
-  // IMPORTANT: "FILL" can ONLY be used on children of auto-layout frames. If the parent does not have layoutMode set to "HORIZONTAL" or "VERTICAL", use "FIXED" instead. Always set the parent's layoutMode BEFORE setting children to "FILL".
+  // CRITICAL: layoutSizingHorizontal / layoutSizingVertical can ONLY be set on:
+  //   1. A frame that itself has layoutMode set (auto-layout frame), OR
+  //   2. A node that is ALREADY a child of an auto-layout frame
+  // Setting layoutSizing* on a top-level frame (child of the page) WILL THROW AN ERROR.
+  // For top-level frames, use resize() instead. Do NOT set layoutSizing* on them.
+  // "FILL" has an extra constraint: the node's PARENT must have layoutMode set.
+  // Safe pattern:
+  //   const outer = figma.createFrame()
+  //   outer.layoutMode = "HORIZONTAL"  // makes it auto-layout
+  //   outer.resize(400, 50)            // use resize() for top-level sizing — do NOT use layoutSizing*
+  //   const child = figma.createFrame()
+  //   outer.appendChild(child)         // child is now inside auto-layout
+  //   child.layoutSizingHorizontal = "FILL"  // safe because parent has layoutMode
 
 Set corner radius:
   node.cornerRadius = 8

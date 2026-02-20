@@ -148,6 +148,12 @@ figma.ui.onmessage = async (msg: any) => {
       logEntry({ type: "abort", timestamp: "" });
       break;
 
+    case "CLEAR_CHAT":
+      conversation.clear();
+      pendingResponse = null;
+      logEntry({ type: "clear_chat", timestamp: "" });
+      break;
+
     case "SET_API_KEY":
       await figma.clientStorage.setAsync("apiKey", msg.key);
       apiKey = msg.key;

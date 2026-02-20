@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import ReactDOM from "react-dom/client";
 import { Chat, ChatMessage } from "./Chat";
 import { Settings } from "./Settings";
@@ -34,6 +34,9 @@ function App() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [connectionError, setConnectionError] = useState<string | undefined>();
+  const [showHelp, setShowHelp] = useState(false);
+  const [chatKey, setChatKey] = useState(0);
+  const helpRef = useRef<HTMLDivElement>(null);
 
   // Listen for messages from sandbox
   useEffect(() => {
@@ -127,6 +130,27 @@ function App() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  // Close help popover on outside click
+  useEffect(() => {
+    if (!showHelp) return;
+    const handleClick = (e: MouseEvent) => {
+      if (helpRef.current && !helpRef.current.contains(e.target as Node)) {
+        setShowHelp(false);
+      }
+    };
+    window.addEventListener("mousedown", handleClick);
+    return () => window.removeEventListener("mousedown", handleClick);
+  }, [showHelp]);
+
+  const handleClearChat = useCallback(() => {
+    setMessages([]);
+    setPendingAction(null);
+    setIsThinking(false);
+    setIsExecuting(false);
+    setChatKey(prev => prev + 1);
+    parent.postMessage({ pluginMessage: { type: "CLEAR_CHAT" } }, "*");
+  }, []);
+
   const handleTestConnection = useCallback(() => {
     setConnectionStatus("testing");
     setConnectionError(undefined);
@@ -192,7 +216,7 @@ function App() {
     return (
       <div className="app">
         <header className="header">
-          <h1>AI Design Copilot</h1>
+          <span className="header-title">Settings</span>
           <div className="header-actions">
             {hasApiKey && (
               <span className="api-key-badge" title="API key saved">
@@ -231,21 +255,57 @@ function App() {
 
   return (
     <div className="app">
-      <header className="header">
-        <h1>AI Design Copilot</h1>
-        <div className="header-actions">
+      <header className="toolbar">
+        <div className="toolbar-left">
           {hasApiKey && (
             <span className="api-key-badge" title="API key saved">
               <span className="api-key-dot" />
               API connected
             </span>
           )}
+          <span className="toolbar-model-label">{
+            model.includes("opus") ? "Opus" :
+            model.includes("haiku") ? "Haiku" : "Sonnet"
+          }</span>
+        </div>
+        <div className="toolbar-right">
+          <button
+            className="icon-btn"
+            onClick={handleClearChat}
+            title="Clear chat"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+            </svg>
+          </button>
+          <div className="help-wrapper" ref={helpRef}>
+            <button
+              className="icon-btn"
+              onClick={() => setShowHelp(!showHelp)}
+              title="Keyboard shortcuts"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="8" cy="8" r="7" />
+                <path d="M6 6a2 2 0 013.89.67c0 1.33-2 1.33-2 2.66M8 11.33h.01" />
+              </svg>
+            </button>
+            {showHelp && (
+              <div className="help-popover">
+                <div className="help-title">Keyboard Shortcuts</div>
+                <div className="help-row"><kbd>Enter</kbd> <span>Send message</span></div>
+                <div className="help-row"><kbd>Shift+Enter</kbd> <span>New line</span></div>
+                <div className="help-row"><kbd>Esc</kbd> <span>Stop AI</span></div>
+                <div className="help-row"><kbd>Option+Up</kbd> <span>Previous message</span></div>
+                <div className="help-row"><kbd>Option+Down</kbd> <span>Next message</span></div>
+              </div>
+            )}
+          </div>
           <button
             className="icon-btn"
             onClick={() => setView("settings")}
             title="Settings"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
               <line x1="10.5" y1="3.5" x2="15.5" y2="3.5" />
               <line x1=".5" y1="3.5" x2="2.5" y2="3.5" />
               <line x1="5.5" y1="12.5" x2=".5" y2="12.5" />
@@ -258,6 +318,7 @@ function App() {
       </header>
       <ContextBadge nodes={selectedNodes} pageName={pageName} />
       <Chat
+        key={chatKey}
         messages={messages}
         onSendMessage={sendMessage}
         onConfirm={handleConfirm}
