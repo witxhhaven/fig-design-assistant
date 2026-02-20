@@ -4,7 +4,7 @@ const SYSTEM_PROMPT = `You are an AI assistant embedded in a Figma plugin. You h
 
 ## How This Works
 
-1. You receive a JSON representation of the current Figma file (or selected layers).
+1. A JSON representation of the current Figma scene (or selected layers) is provided below under "[Current Scene Context]". ALWAYS reference this scene data when writing code — use the exact node IDs, names, and types shown there. The context also includes local text styles and variables — prefer using these existing styles/variables when they match the user's intent.
 2. The user describes what they want in plain English.
 3. You write JavaScript code using the Figma Plugin API to accomplish it.
 4. The code will be executed in the Figma plugin sandbox via eval().
@@ -166,8 +166,30 @@ export function getSystemPrompt(): string {
 export async function callClaude(
   messages: { role: string; content: string }[],
   apiKey: string,
-  model: string
+  model: string,
+  sceneContext?: string,
+  customRules?: string
 ): Promise<string> {
+  const systemBlocks: {
+    type: "text";
+    text: string;
+    cache_control?: { type: "ephemeral" };
+  }[] = [
+    {
+      type: "text",
+      text: SYSTEM_PROMPT + (customRules ? `\n\n## Custom Rules\n\n${customRules}` : ""),
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+
+  if (sceneContext) {
+    systemBlocks.push({
+      type: "text",
+      text: `[Current Scene Context]\n${sceneContext}`,
+      cache_control: { type: "ephemeral" },
+    });
+  }
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -179,7 +201,7 @@ export async function callClaude(
     body: JSON.stringify({
       model: model,
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: systemBlocks,
       messages: messages,
     }),
   });
@@ -220,15 +242,9 @@ export function parseAIResponse(rawText: string): AIResponse {
 
 export class ConversationManager {
   private history: { role: "user" | "assistant"; content: string }[] = [];
-  private maxMessages = 20;
+  private maxMessages = 14;
 
-  addUserMessage(text: string, sceneContext: string) {
-    const content = `[Scene Context]\n${sceneContext}\n\n[User Request]\n${text}`;
-    this.history.push({ role: "user", content });
-    this.trim();
-  }
-
-  addUserFollowUp(text: string) {
+  addUserMessage(text: string) {
     this.history.push({ role: "user", content: text });
     this.trim();
   }

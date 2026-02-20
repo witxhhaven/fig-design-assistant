@@ -9,6 +9,13 @@ figma.showUI(__html__, { width: 360, height: 600, themeColors: true });
 // State
 let apiKey: string | null = null;
 let model = "claude-sonnet-4-6";
+const DEFAULT_CUSTOM_RULES = `- Always use auto-layout when creating new frames or containers
+- Use 8px spacing grid (padding, gaps, margins should be multiples of 8)
+- Give layers descriptive names (e.g. "Header / Nav Link" not "Frame 47")
+- After creating or modifying nodes, zoom to them with figma.viewport.scrollAndZoomIntoView()
+- When creating text, default to Inter Regular 14px unless specified otherwise
+- Prefer using existing local styles and variables when they match what's needed`;
+let customRules = DEFAULT_CUSTOM_RULES;
 let pendingResponse: AIResponse | null = null;
 let lastUserRequest = "";
 const conversation = new ConversationManager();
@@ -96,11 +103,15 @@ async function loadSettings() {
   apiKey = (await figma.clientStorage.getAsync("apiKey")) || null;
   model =
     (await figma.clientStorage.getAsync("model")) || "claude-sonnet-4-6";
+  const savedRules = await figma.clientStorage.getAsync("customRules");
+  customRules = savedRules ?? DEFAULT_CUSTOM_RULES;
   figma.ui.postMessage({
     type: "SETTINGS",
     hasApiKey: !!apiKey,
     keyPreview: maskKey(apiKey),
     model,
+    customRules,
+    defaultCustomRules: DEFAULT_CUSTOM_RULES,
   });
 }
 
@@ -157,7 +168,7 @@ figma.ui.onmessage = async (msg: any) => {
     case "SET_API_KEY":
       await figma.clientStorage.setAsync("apiKey", msg.key);
       apiKey = msg.key;
-      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: true, keyPreview: maskKey(apiKey), model });
+      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: true, keyPreview: maskKey(apiKey), model, customRules, defaultCustomRules: DEFAULT_CUSTOM_RULES });
       break;
 
     case "SET_MODEL":
@@ -165,8 +176,13 @@ figma.ui.onmessage = async (msg: any) => {
       model = msg.model;
       break;
 
+    case "SET_CUSTOM_RULES":
+      await figma.clientStorage.setAsync("customRules", msg.rules);
+      customRules = msg.rules;
+      break;
+
     case "GET_SETTINGS":
-      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: !!apiKey, keyPreview: maskKey(apiKey), model });
+      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: !!apiKey, keyPreview: maskKey(apiKey), model, customRules, defaultCustomRules: DEFAULT_CUSTOM_RULES });
       break;
 
     case "RESIZE":
@@ -235,17 +251,19 @@ async function handleChatMessage(text: string) {
 
   try {
     // Build scene context
-    const sceneContext = buildSceneContext();
-    const sceneJson = JSON.stringify(sceneContext, null, 2);
+    const sceneContext = await buildSceneContext();
+    const sceneJson = JSON.stringify(sceneContext);
 
     // Add to conversation history
-    conversation.addUserMessage(text, sceneJson);
+    conversation.addUserMessage(text);
 
     // Call Claude
     const rawResponse = await callClaude(
       conversation.getMessages(),
       apiKey,
-      model
+      model,
+      sceneJson,
+      customRules
     );
 
     conversation.addAssistantMessage(rawResponse);
@@ -273,7 +291,7 @@ async function handleChatMessage(text: string) {
         },
       ];
 
-      const retryResponse = await callClaude(retryMessages, apiKey, model);
+      const retryResponse = await callClaude(retryMessages, apiKey, model, sceneJson, customRules);
       conversation.addAssistantMessage(retryResponse);
       aiResponse = parseAIResponse(retryResponse);
     }

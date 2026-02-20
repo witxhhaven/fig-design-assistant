@@ -27,6 +27,8 @@ function App() {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [keyPreview, setKeyPreview] = useState<string | null>(null);
   const [model, setModel] = useState("claude-sonnet-4-6");
+  const [customRules, setCustomRules] = useState("");
+  const [defaultCustomRules, setDefaultCustomRules] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(
     null
@@ -54,6 +56,8 @@ function App() {
           setHasApiKey(msg.hasApiKey);
           setKeyPreview(msg.keyPreview || null);
           setModel(msg.model);
+          setCustomRules(msg.customRules || "");
+          setDefaultCustomRules(msg.defaultCustomRules || "");
           if (!msg.hasApiKey) setView("settings");
           break;
 
@@ -212,6 +216,14 @@ function App() {
     []
   );
 
+  const handleSetCustomRules = useCallback((rules: string) => {
+    setCustomRules(rules);
+    parent.postMessage(
+      { pluginMessage: { type: "SET_CUSTOM_RULES", rules } },
+      "*"
+    );
+  }, []);
+
   if (view === "settings") {
     return (
       <div className="app">
@@ -241,10 +253,13 @@ function App() {
           hasApiKey={hasApiKey}
           keyPreview={keyPreview}
           model={model}
+          customRules={customRules}
+          defaultCustomRules={defaultCustomRules}
           connectionStatus={connectionStatus}
           connectionError={connectionError}
           onSetApiKey={handleSetApiKey}
           onSetModel={handleSetModel}
+          onSetCustomRules={handleSetCustomRules}
           onTestConnection={handleTestConnection}
           onClose={hasApiKey ? () => setView("chat") : undefined}
         />

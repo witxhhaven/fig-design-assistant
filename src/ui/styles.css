@@ -724,6 +724,28 @@ kbd {
   border-color: #4F8EF7;
 }
 
+.settings-textarea {
+  padding: 8px 12px;
+  border: 1.5px solid var(--figma-color-border, #e0e0e0);
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: inherit;
+  background: var(--figma-color-bg, #fff);
+  color: var(--figma-color-text, #333);
+  outline: none;
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.5;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.settings-textarea:focus {
+  border-color: #4F8EF7;
+  box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.12);
+}
+.settings-textarea::placeholder {
+  color: var(--figma-color-text-tertiary, #aaa);
+}
+
 .settings-footer {
   margin-top: auto;
   padding-top: 12px;

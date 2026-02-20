@@ -146,7 +146,7 @@ export function serializeNode(
   return result;
 }
 
-export function buildSceneContext(): SceneContext {
+export async function buildSceneContext(): Promise<SceneContext> {
   const selection = figma.currentPage.selection;
 
   const pages = figma.root.children.map(page => ({
@@ -184,10 +184,63 @@ export function buildSceneContext(): SceneContext {
     }
   }
 
-  return {
+  // Fetch text styles and variables in parallel
+  const [textStylesRaw, variablesRaw, collectionsRaw] = await Promise.all([
+    figma.getLocalTextStylesAsync(),
+    figma.variables.getLocalVariablesAsync(),
+    figma.variables.getLocalVariableCollectionsAsync(),
+  ]);
+
+  const textStyles = textStylesRaw.map(s => ({
+    name: s.name,
+    fontFamily: s.fontName.family,
+    fontStyle: s.fontName.style,
+    fontSize: s.fontSize as number,
+  }));
+
+  const collectionNames = new Map<string, string>();
+  for (const c of collectionsRaw) {
+    collectionNames.set(c.id, c.name);
+  }
+
+  const variables = variablesRaw
+    .filter(v => !v.remote)
+    .map(v => {
+      const modeId = Object.keys(v.valuesByMode)[0];
+      const rawValue = modeId ? v.valuesByMode[modeId] : undefined;
+      let value = rawValue;
+      // Simplify color values to hex-like
+      if (
+        rawValue &&
+        typeof rawValue === "object" &&
+        "r" in rawValue &&
+        "g" in rawValue &&
+        "b" in rawValue
+      ) {
+        const c = rawValue as { r: number; g: number; b: number; a?: number };
+        value = {
+          r: Math.round(c.r * 1000) / 1000,
+          g: Math.round(c.g * 1000) / 1000,
+          b: Math.round(c.b * 1000) / 1000,
+        };
+      }
+      return {
+        collection: collectionNames.get(v.variableCollectionId) || "",
+        name: v.name,
+        type: v.resolvedType,
+        value,
+      };
+    });
+
+  const result: SceneContext = {
     file: { name: figma.root.name, pages },
     scope,
     scopeDescription,
     nodes,
   };
+
+  if (textStyles.length > 0) result.textStyles = textStyles;
+  if (variables.length > 0) result.variables = variables;
+
+  return result;
 }

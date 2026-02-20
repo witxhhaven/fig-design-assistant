@@ -4,10 +4,13 @@ interface SettingsProps {
   hasApiKey: boolean;
   keyPreview: string | null;
   model: string;
+  customRules: string;
+  defaultCustomRules: string;
   connectionStatus: "idle" | "testing" | "success" | "error";
   connectionError?: string;
   onSetApiKey: (key: string) => void;
   onSetModel: (model: string) => void;
+  onSetCustomRules: (rules: string) => void;
   onTestConnection: () => void;
   onClose?: () => void;
 }
@@ -22,10 +25,13 @@ export function Settings({
   hasApiKey,
   keyPreview,
   model,
+  customRules,
+  defaultCustomRules,
   connectionStatus,
   connectionError,
   onSetApiKey,
   onSetModel,
+  onSetCustomRules,
   onTestConnection,
   onClose,
 }: SettingsProps) {
@@ -116,6 +122,28 @@ export function Settings({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="settings-section">
+        <label className="settings-label">Custom Rules</label>
+        <p className="settings-hint">
+          Instructions the AI will always follow. e.g. "Always use 8px spacing" or "Use our brand color #4F46E5".
+        </p>
+        <textarea
+          className="settings-textarea"
+          placeholder="Add your custom rules here..."
+          value={customRules}
+          onChange={e => onSetCustomRules(e.target.value)}
+          rows={8}
+        />
+        {customRules !== defaultCustomRules && (
+          <button
+            className="btn btn-secondary btn-small"
+            onClick={() => onSetCustomRules(defaultCustomRules)}
+          >
+            Restore Defaults
+          </button>
+        )}
       </div>
 
       {onClose && (

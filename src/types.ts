@@ -145,6 +145,8 @@ export interface SceneContext {
   scope: "selection" | "page";
   scopeDescription: string;
   nodes: SerializedNode[];
+  textStyles?: { name: string; fontFamily: string; fontStyle: string; fontSize: number }[];
+  variables?: { collection: string; name: string; type: string; value: any }[];
 }
 
 export interface AIResponse {
