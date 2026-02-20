@@ -255,14 +255,19 @@ async function handleChatMessage(text: string) {
     const sceneContext = await buildSceneContext();
     const sceneJson = JSON.stringify(sceneContext);
 
-    // Detect selection change — if different element, start fresh conversation
+    // Detect selection change — if user switched to a different element, start fresh
+    // Only clear when going from one specific selection to a DIFFERENT specific selection.
+    // Don't clear when selection goes to nothing (page scope) — user may have just
+    // clicked the plugin input or deselected while reading AI responses.
     const currentSelectionKey = sceneContext.scope === "selection"
       ? sceneContext.nodes.map(function(n) { return n.id; }).sort().join(",")
-      : "page:" + figma.currentPage.id;
-    if (lastSelectionKey && currentSelectionKey !== lastSelectionKey) {
+      : "";
+    if (currentSelectionKey && lastSelectionKey && currentSelectionKey !== lastSelectionKey) {
       conversation.clear();
     }
-    lastSelectionKey = currentSelectionKey;
+    if (currentSelectionKey) {
+      lastSelectionKey = currentSelectionKey;
+    }
 
     // Add to conversation history
     conversation.addUserMessage(text);

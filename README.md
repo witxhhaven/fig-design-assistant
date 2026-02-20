@@ -4,14 +4,18 @@ Claude Code for Figma — an AI-powered plugin that lets you edit Figma designs 
 
 Describe what you want in plain English, and the AI writes and executes Figma Plugin API code to make it happen. Review the proposed changes before they're applied, and undo anything with Cmd+Z.
 
-![Chat Interface](screenshots/chat.png)
+![Chat Interface](screenshots/Chat%20interface.png)
 
 ## Features
 
-- **Natural language editing** — "Make the header blue", "Add 16px padding to all cards", "Create a 3-column grid layout"
+- **Natural language editing** — "Make the header blue", "Add 16px padding to all cards", "Create a pricing card component"
 - **Code preview & approval** — See exactly what code will run before confirming
+- **Clarifying questions** — For creative tasks, the AI asks about style and copy preferences before building
 - **Multi-turn conversations** — Iterate on designs through back-and-forth chat
-- **Context-aware** — AI sees your current selection, page structure, local variables, and text styles
+- **Context-aware** — AI sees your current selection, page structure, local variables, text styles, and bound color variables
+- **Smart context switching** — Conversation auto-resets when you select a different element, so the AI always works on the right target
+- **Intelligent placement** — New designs are placed in empty canvas space, avoiding overlaps with existing content
+- **Color variable preservation** — When duplicating or creating variants, bound color variables are carried over correctly
 - **Custom rules** — Define persistent instructions like "Always use 8px spacing" or "Use our brand color #4F46E5"
 - **BYOK (Bring Your Own Key)** — Direct API calls to Anthropic. Your key stays local and is never sent anywhere else
 - **Model selection** — Choose between Sonnet (fast), Opus (powerful), or Haiku (fastest)
@@ -51,7 +55,9 @@ npm run build
 
 > **Important:** Make sure your Anthropic account has more than $5 in credits. Below that threshold, API rate limits are significantly reduced and the plugin may become slow or unresponsive.
 
-![Demo](screenshots/demo.png)
+![Demo — Hero Section](screenshots/demo.png)
+
+![Demo — Pricing Cards](screenshots/demo2.png)
 
 ## Development
 
@@ -76,23 +82,29 @@ src/
 ├── ai.ts          # System prompt, Claude API client, conversation manager
 ├── code.ts        # Plugin sandbox entry point, orchestration
 ├── executor.ts    # Code execution engine (eval)
-├── scene.ts       # Scene serialization (nodes, variables, text styles)
+├── scene.ts       # Scene serialization (nodes, variables, text styles, bound variables)
 ├── types.ts       # Shared TypeScript types
 └── ui/
-    ├── App.tsx    # Main React app
-    ├── Chat.tsx   # Chat interface
+    ├── App.tsx        # Main React app, state management
+    ├── Chat.tsx       # Chat interface with randomized thinking messages
+    ├── ContextBadge.tsx # Selection context indicator with lock during AI processing
+    ├── ConfirmCard.tsx  # Code proposal review card
     ├── Settings.tsx   # Settings panel
+    ├── Markdown.tsx   # AI response markdown renderer
+    ├── ResizeHandle.tsx # Plugin panel resize
     └── styles.css     # Styles
 ```
 
 ## How It Works
 
-1. The plugin serializes your current Figma scene (selected layers, page structure, local variables, text styles) into JSON
-2. You describe what you want in natural language
-3. Claude generates Figma Plugin API JavaScript code
-4. You review the proposed code and summary
-5. On confirmation, the code executes in the plugin sandbox
-6. Undo with Cmd+Z if needed
+1. Select layers in Figma (or leave nothing selected for page-level context)
+2. The plugin serializes your scene — selected layers, page structure, local variables, text styles, and bound color variables — into JSON
+3. You describe what you want in natural language
+4. The context badge locks to show which selection the AI is working with
+5. Claude generates Figma Plugin API JavaScript code
+6. You review the proposed code and summary
+7. On confirmation, the code executes in the plugin sandbox
+8. Undo with Cmd+Z if needed
 
 ## Custom Rules
 
