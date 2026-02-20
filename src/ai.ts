@@ -111,6 +111,20 @@ Text in auto-layout (CRITICAL — prevents single-character-per-line bug):
   4. text.layoutSizingHorizontal = "FILL"
   ALWAYS use this pattern for ANY text node inside an auto-layout frame.
 
+Frames in auto-layout (CRITICAL — prevents squashed/collapsed elements):
+  Do NOT use resize() to set height on frames inside auto-layout — the height gets overridden.
+  After appending a child frame to an auto-layout parent, set its sizing:
+  parent.appendChild(child)
+  child.layoutSizingHorizontal = "FILL"   // stretch to fill parent width
+  child.layoutSizingVertical = "HUG"      // height wraps to content
+  For nested auto-layout frames (e.g. cards inside grids), ALL levels must use HUG/FILL — never fixed resize().
+
+Spacing in auto-layout:
+  Do NOT create spacer rectangles for spacing. Use auto-layout's built-in spacing:
+  frame.itemSpacing = 16   // gap between children
+  frame.paddingTop = 24    // padding around content
+  If different gaps are needed between specific children, use frame.itemSpacing for the common gap and wrap groups in sub-frames with their own spacing.
+
 Delete node:
   node.remove()
 
