@@ -49,6 +49,8 @@ npm run build
 3. Click **Test Connection** to verify
 4. Start chatting!
 
+> **Important:** Make sure your Anthropic account has more than $5 in credits. Below that threshold, API rate limits are significantly reduced and the plugin may become slow or unresponsive.
+
 ![Demo](screenshots/demo.png)
 
 ## Development
