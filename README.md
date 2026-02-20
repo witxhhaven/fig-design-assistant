@@ -21,7 +21,9 @@ Describe what you want in plain English, and the AI writes and executes Figma Pl
 - **Model selection** — Choose between Sonnet (fast), Opus (powerful), or Haiku (fastest)
 - **Prompt caching** — Optimized token usage with Anthropic's prompt caching for lower costs
 
-![Settings](screenshots/settings.png)
+![Demo — Hero Section](screenshots/demo.png)
+
+![Demo — Pricing Cards](screenshots/demo2.png)
 
 ## Setup
 
@@ -55,9 +57,7 @@ npm run build
 
 > **Important:** Make sure your Anthropic account has more than $5 in credits. Below that threshold, API rate limits are significantly reduced and the plugin may become slow or unresponsive.
 
-![Demo — Hero Section](screenshots/demo.png)
-
-![Demo — Pricing Cards](screenshots/demo2.png)
+![Settings](screenshots/settings.png)
 
 ## Development
 
