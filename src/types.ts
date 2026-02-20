@@ -145,6 +145,7 @@ export interface SceneContext {
   scope: "selection" | "page";
   scopeDescription: string;
   nodes: SerializedNode[];
+  emptySpot?: { x: number; y: number };
   textStyles?: { name: string; fontFamily: string; fontStyle: string; fontSize: number }[];
   variables?: { collection: string; name: string; type: string; value: any }[];
 }

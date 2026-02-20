@@ -228,6 +228,15 @@ kbd {
   white-space: nowrap;
 }
 
+.context-badge-locked {
+  background: var(--figma-color-bg-brand-tertiary, #e8f0fe);
+  color: var(--figma-color-text-brand, #1a73e8);
+}
+
+.context-badge-locked .context-icon {
+  color: var(--figma-color-text-brand, #1a73e8);
+}
+
 /* ── Chat Layout ── */
 .chat {
   display: flex;

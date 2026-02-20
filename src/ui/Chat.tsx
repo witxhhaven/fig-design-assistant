@@ -23,10 +23,28 @@ interface ChatProps {
 }
 
 const EXAMPLES = [
-  "Make the header blue",
-  "Change text to 'Welcome'",
-  "Create a card with auto layout",
-  "Delete the footer",
+  "Create a pricing card component",
+  "Build a navigation bar with links",
+  "Design a login form with inputs",
+  "Make a hero section with CTA button",
+];
+
+const THINKING_MESSAGES = [
+  "Thinking...",
+  "Working on it...",
+  "Cooking something up...",
+  "Brewing ideas...",
+  "Let me figure this out...",
+  "On it...",
+  "Crunching the pixels...",
+  "Designing a plan...",
+  "Give me a sec...",
+  "Processing...",
+  "Almost got it...",
+  "Putting it together...",
+  "Hmm, let me see...",
+  "Working some magic...",
+  "Figuring things out...",
 ];
 
 export function Chat({
@@ -43,8 +61,16 @@ export function Chat({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draft, setDraft] = useState("");
+  const [thinkingMessage, setThinkingMessage] = useState(THINKING_MESSAGES[0]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (isThinking) {
+      const idx = Math.floor(Math.random() * THINKING_MESSAGES.length);
+      setThinkingMessage(THINKING_MESSAGES[idx]);
+    }
+  }, [isThinking]);
 
   const resizeInput = () => {
     const el = inputRef.current;
@@ -226,7 +252,7 @@ export function Chat({
                 <span />
                 <span />
               </div>
-              <span className="thinking-text">Analyzing your design...</span>
+              <span className="thinking-text">{thinkingMessage}</span>
             </div>
           </div>
         )}

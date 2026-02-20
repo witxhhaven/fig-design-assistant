@@ -34,6 +34,7 @@ function App() {
     null
   );
   const [isExecuting, setIsExecuting] = useState(false);
+  const [lockedContext, setLockedContext] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [connectionError, setConnectionError] = useState<string | undefined>();
   const [showHelp, setShowHelp] = useState(false);
@@ -85,17 +86,20 @@ function App() {
 
         case "AI_CLARIFICATION":
           setIsThinking(false);
+          setLockedContext(null);
           setMessages(prev => [...prev, { type: "ai", text: msg.question }]);
           break;
 
         case "AI_CHAT":
           setIsThinking(false);
+          setLockedContext(null);
           setMessages(prev => [...prev, { type: "ai", text: msg.text }]);
           break;
 
         case "EXECUTION_SUCCESS":
           setIsExecuting(false);
           setPendingAction(null);
+          setLockedContext(null);
           setMessages(prev => [
             ...prev,
             { type: "success", text: msg.summary },
@@ -105,12 +109,14 @@ function App() {
         case "EXECUTION_ERROR":
           setIsExecuting(false);
           setPendingAction(null);
+          setLockedContext(null);
           setMessages(prev => [...prev, { type: "error", text: msg.error }]);
           break;
 
         case "ERROR":
           setIsThinking(false);
           setIsExecuting(false);
+          setLockedContext(null);
           if (msg.message) {
             setMessages(prev => [...prev, { type: "error", text: msg.message }]);
           }
@@ -162,15 +168,27 @@ function App() {
   }, []);
 
   const sendMessage = useCallback((text: string) => {
+    // Lock context badge to show what selection is being used
+    let contextText: string;
+    if (selectedNodes.length === 0) {
+      contextText = pageName ? `Page: ${pageName}` : "No selection";
+    } else if (selectedNodes.length === 1) {
+      contextText = selectedNodes[0].name;
+    } else {
+      contextText = `${selectedNodes.length} layers`;
+    }
+    setLockedContext(contextText);
+
     setMessages(prev => [...prev, { type: "user", text }]);
     parent.postMessage(
       { pluginMessage: { type: "CHAT_MESSAGE", text } },
       "*"
     );
-  }, []);
+  }, [selectedNodes, pageName]);
 
   const handleStop = useCallback(() => {
     setIsThinking(false);
+    setLockedContext(null);
     parent.postMessage({ pluginMessage: { type: "ABORT" } }, "*");
   }, []);
 
@@ -188,6 +206,7 @@ function App() {
 
   const handleCancel = useCallback(() => {
     setPendingAction(null);
+    setLockedContext(null);
     setMessages(prev =>
       prev.map((m, i) =>
         i === prev.length - 1 && m.type === "ai-proposal"
@@ -331,7 +350,7 @@ function App() {
           </button>
         </div>
       </header>
-      <ContextBadge nodes={selectedNodes} pageName={pageName} />
+      <ContextBadge nodes={selectedNodes} pageName={pageName} lockedContext={lockedContext} />
       <Chat
         key={chatKey}
         messages={messages}

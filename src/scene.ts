@@ -1,9 +1,9 @@
 import { SerializedNode, SceneContext } from "./types";
 
-function serializeFills(fills: ReadonlyArray<Paint>): any[] {
+function serializeFills(fills: ReadonlyArray<Paint>, varLookup?: Map<string, string>): any[] {
   return fills.map(fill => {
     if (fill.type === "SOLID") {
-      return {
+      const result: any = {
         type: "SOLID",
         color: {
           r: Math.round(fill.color.r * 1000) / 1000,
@@ -12,6 +12,14 @@ function serializeFills(fills: ReadonlyArray<Paint>): any[] {
         },
         opacity: fill.opacity !== undefined && fill.opacity !== 1 ? fill.opacity : undefined,
       };
+      // Include bound variable name if present
+      if (fill.boundVariables && fill.boundVariables.color && varLookup) {
+        const varId = (fill.boundVariables.color as any).id;
+        if (varId && varLookup.has(varId)) {
+          result.boundVariable = varLookup.get(varId);
+        }
+      }
+      return result;
     }
     return { type: fill.type };
   });
@@ -20,7 +28,8 @@ function serializeFills(fills: ReadonlyArray<Paint>): any[] {
 export function serializeNode(
   node: SceneNode,
   depth: number,
-  maxDepth: number
+  maxDepth: number,
+  varLookup?: Map<string, string>
 ): SerializedNode {
   const result: SerializedNode = {
     id: node.id,
@@ -34,24 +43,12 @@ export function serializeNode(
 
   // Fills
   if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
-    result.fills = serializeFills(node.fills as ReadonlyArray<Paint>);
+    result.fills = serializeFills(node.fills as ReadonlyArray<Paint>, varLookup);
   }
 
   // Strokes
   if ("strokes" in node && Array.isArray(node.strokes) && node.strokes.length > 0) {
-    result.strokes = (node.strokes as ReadonlyArray<Paint>).map(s => {
-      if (s.type === "SOLID") {
-        return {
-          type: "SOLID",
-          color: {
-            r: Math.round(s.color.r * 1000) / 1000,
-            g: Math.round(s.color.g * 1000) / 1000,
-            b: Math.round(s.color.b * 1000) / 1000,
-          },
-        };
-      }
-      return { type: s.type };
-    });
+    result.strokes = serializeFills(node.strokes as ReadonlyArray<Paint>, varLookup);
   }
 
   // Opacity (only if non-default)
@@ -136,7 +133,7 @@ export function serializeNode(
   if ("children" in node) {
     if (depth < maxDepth) {
       result.children = (node as any).children.map((child: SceneNode) =>
-        serializeNode(child, depth + 1, maxDepth)
+        serializeNode(child, depth + 1, maxDepth, varLookup)
       );
     } else {
       result.childCount = (node as any).children.length;
@@ -155,36 +152,7 @@ export async function buildSceneContext(): Promise<SceneContext> {
     isCurrent: page.id === figma.currentPage.id,
   }));
 
-  let scope: "selection" | "page";
-  let nodes: SerializedNode[];
-  let scopeDescription: string;
-
-  if (selection.length > 0) {
-    scope = "selection";
-    scopeDescription = `${selection.length} layer${selection.length > 1 ? "s" : ""} selected`;
-    nodes = selection.map(n => serializeNode(n, 0, 6));
-  } else {
-    scope = "page";
-    scopeDescription = `Page: ${figma.currentPage.name}`;
-    nodes = figma.currentPage.children.map(n => serializeNode(n as SceneNode, 0, 4));
-  }
-
-  // Token budget check (~1 token per 4 chars, budget ~6000 tokens)
-  const json = JSON.stringify(nodes);
-  const estimatedTokens = json.length / 4;
-
-  if (estimatedTokens > 6000) {
-    const reducedMaxDepth = selection.length > 0 ? 4 : 2;
-    if (selection.length > 0) {
-      nodes = selection.map(n => serializeNode(n, 0, reducedMaxDepth));
-    } else {
-      nodes = figma.currentPage.children.map(n =>
-        serializeNode(n as SceneNode, 0, reducedMaxDepth)
-      );
-    }
-  }
-
-  // Fetch text styles and variables in parallel
+  // Fetch text styles and variables first (needed for serialization)
   const [textStylesRaw, variablesRaw, collectionsRaw] = await Promise.all([
     figma.getLocalTextStylesAsync(),
     figma.variables.getLocalVariablesAsync(),
@@ -203,8 +171,14 @@ export async function buildSceneContext(): Promise<SceneContext> {
     collectionNames.set(c.id, c.name);
   }
 
-  const variables = variablesRaw
-    .filter(v => !v.remote)
+  // Build variable ID -> name lookup for fill serialization
+  const varLookup = new Map<string, string>();
+  const localVars = variablesRaw.filter(v => !v.remote);
+  for (const v of localVars) {
+    varLookup.set(v.id, v.name);
+  }
+
+  const variables = localVars
     .map(v => {
       const modeId = Object.keys(v.valuesByMode)[0];
       const rawValue = modeId ? v.valuesByMode[modeId] : undefined;
@@ -232,11 +206,59 @@ export async function buildSceneContext(): Promise<SceneContext> {
       };
     });
 
+  // Serialize nodes (after variables are loaded so we can include bound variable names)
+  let scope: "selection" | "page";
+  let nodes: SerializedNode[];
+  let scopeDescription: string;
+
+  if (selection.length > 0) {
+    scope = "selection";
+    scopeDescription = `${selection.length} layer${selection.length > 1 ? "s" : ""} selected`;
+    nodes = selection.map(n => serializeNode(n, 0, 6, varLookup));
+  } else {
+    scope = "page";
+    scopeDescription = `Page: ${figma.currentPage.name}`;
+    nodes = figma.currentPage.children.map(n => serializeNode(n as SceneNode, 0, 4, varLookup));
+  }
+
+  // Token budget check (~1 token per 4 chars, budget ~6000 tokens)
+  const json = JSON.stringify(nodes);
+  const estimatedTokens = json.length / 4;
+
+  if (estimatedTokens > 6000) {
+    const reducedMaxDepth = selection.length > 0 ? 4 : 2;
+    if (selection.length > 0) {
+      nodes = selection.map(n => serializeNode(n, 0, reducedMaxDepth, varLookup));
+    } else {
+      nodes = figma.currentPage.children.map(n =>
+        serializeNode(n as SceneNode, 0, reducedMaxDepth, varLookup)
+      );
+    }
+  }
+
+  // Compute an empty spot to the right of all existing content
+  const pageChildren = figma.currentPage.children;
+  let emptySpot = { x: 0, y: 0 };
+  if (pageChildren.length > 0) {
+    let maxRight = -Infinity;
+    let topAtMaxRight = 0;
+    for (var i = 0; i < pageChildren.length; i++) {
+      var child = pageChildren[i];
+      var right = Math.round(child.x + child.width);
+      if (right > maxRight) {
+        maxRight = right;
+        topAtMaxRight = Math.round(child.y);
+      }
+    }
+    emptySpot = { x: maxRight + 100, y: topAtMaxRight };
+  }
+
   const result: SceneContext = {
     file: { name: figma.root.name, pages },
     scope,
     scopeDescription,
     nodes,
+    emptySpot,
   };
 
   if (textStyles.length > 0) result.textStyles = textStyles;

@@ -4,7 +4,7 @@ const SYSTEM_PROMPT = `You are an AI assistant embedded in a Figma plugin. You h
 
 ## How This Works
 
-1. A JSON representation of the current Figma scene (or selected layers) is provided below under "[Current Scene Context]". ALWAYS reference this scene data when writing code — use the exact node IDs, names, and types shown there. The context also includes local text styles and variables — prefer using these existing styles/variables when they match the user's intent.
+1. A JSON representation of the current Figma scene (or selected layers) is provided below under "[Current Scene Context]". ALWAYS reference this scene data when writing code — use the exact node IDs, names, and types shown there. The context also includes local text styles and variables — prefer using these existing styles/variables when they match the user's intent. The context includes an "emptySpot" with {x, y} coordinates — when creating NEW designs from scratch, place them at this position so they don't overlap existing content.
 2. The user describes what they want in plain English.
 3. You write JavaScript code using the Figma Plugin API to accomplish it.
 4. The code will be executed in the Figma plugin sandbox via eval().
@@ -44,7 +44,13 @@ If you need more information before you can write code, also use the message fie
    - figma.getLocalGridStylesAsync() NOT figma.getLocalGridStyles()
    - figma.setCurrentPageAsync() NOT figma.currentPage = ...
    - node.setVectorNetworkAsync() NOT node.vectorNetwork = ...
-   When in doubt, always use the Async version of any Figma API method. Any setter that has an Async variant MUST use it.
+   - await node.setTextStyleIdAsync(styleId) NOT node.textStyleId = styleId
+   - await node.setFillStyleIdAsync(styleId) NOT node.fillStyleId = styleId
+   - await node.setStrokeStyleIdAsync(styleId) NOT node.strokeStyleId = styleId
+   - await node.setEffectStyleIdAsync(styleId) NOT node.effectStyleId = styleId
+   - await node.setGridStyleIdAsync(styleId) NOT node.gridStyleId = styleId
+   - await node.setSharedPluginDataAsync() NOT node.setSharedPluginData()
+   NEVER use sync property setters for styles — always use the setXxxAsync() methods. When in doubt, always use the Async version of any Figma API method.
 2. Always check for null. Async getters can return null.
 3. CRITICAL — Load fonts before ANY text operation. Before setting .characters, .fontSize, or .fontName on ANY TextNode (including newly created ones), you MUST call: await figma.loadFontAsync({ family: "FontName", style: "Style" }). For new text nodes, ONLY use: await figma.loadFontAsync({ family: "Inter", style: "Regular" }). For existing text nodes, ALWAYS read the actual font from the node: await figma.loadFontAsync(textNode.fontName). NEVER guess font style names — they are tricky (e.g. "Semi Bold" not "SemiBold", "Extra Light" not "ExtraLight"). Always read fontName from the node. THIS IS THE #1 SOURCE OF ERRORS.
 4. The code runs in an async context. You can use await. The code is wrapped in an async IIFE before execution.
@@ -54,6 +60,12 @@ If you need more information before you can write code, also use the message fie
 8. Colors use 0-1 range. Figma colors are {r: 0-1, g: 0-1, b: 0-1}, NOT 0-255. Convert hex to 0-1 float.
 9. Scope your changes. Only modify what the user asked for.
 10. For destructive operations (delete), always include a warning in the warnings array.
+11. CRITICAL — NEVER recreate existing components. When the user asks to change, update, or apply something to an existing component or layer, modify it in-place by getting the existing node and changing its properties. Do NOT delete and rebuild it. Only create new nodes when the user explicitly asks to create something new from scratch.
+12. CRITICAL — Preserve colors when duplicating/recreating. The scene context shows fills with a "boundVariable" field (e.g. "boundVariable": "Colors/blue/6") when a color is bound to a variable. When creating a copy or variant of an existing component:
+   - Look up the variable by name: \`const vars = await figma.variables.getLocalVariablesAsync(); const v = vars.find(v => v.name === "Colors/blue/6");\`
+   - Bind it: \`node.fills = [figma.variables.setBoundVariableForPaint({ type: "SOLID", color: { r: 0, g: 0, b: 0 } }, "color", v)]\`
+   - If no boundVariable is shown, use the exact RGB values from the scene context.
+   - NEVER fall back to black {r:0, g:0, b:0} — always use the actual color values from the source node in the scene context.
 
 ## Finding Nodes
 
@@ -86,6 +98,16 @@ Create text:
   const text = figma.createText()
   await figma.loadFontAsync({ family: "Inter", style: "Regular" })
   text.characters = "Hello"
+
+Text in auto-layout (CRITICAL — prevents single-character-per-line bug):
+  "WIDTH_AND_HEIGHT" textAutoResize is INCOMPATIBLE with auto-layout and causes text to collapse to 1 char wide.
+  Do NOT use resize() on text inside auto-layout — it gets overridden.
+  Correct order:
+  1. Create text, load font, set characters/fontSize
+  2. Append to auto-layout parent: frame.appendChild(text)
+  3. text.textAutoResize = "HEIGHT"
+  4. text.layoutSizingHorizontal = "FILL"
+  ALWAYS use this pattern for ANY text node inside an auto-layout frame.
 
 Delete node:
   node.remove()
@@ -200,7 +222,7 @@ export async function callClaude(
     },
     body: JSON.stringify({
       model: model,
-      max_tokens: 4096,
+      max_tokens: 16384,
       system: systemBlocks,
       messages: messages,
     }),

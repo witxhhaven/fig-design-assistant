@@ -18,6 +18,7 @@ const DEFAULT_CUSTOM_RULES = `- Always use auto-layout when creating new frames 
 let customRules = DEFAULT_CUSTOM_RULES;
 let pendingResponse: AIResponse | null = null;
 let lastUserRequest = "";
+let lastSelectionKey = "";
 const conversation = new ConversationManager();
 
 // ── Session logging ──
@@ -253,6 +254,15 @@ async function handleChatMessage(text: string) {
     // Build scene context
     const sceneContext = await buildSceneContext();
     const sceneJson = JSON.stringify(sceneContext);
+
+    // Detect selection change — if different element, start fresh conversation
+    const currentSelectionKey = sceneContext.scope === "selection"
+      ? sceneContext.nodes.map(function(n) { return n.id; }).sort().join(",")
+      : "page:" + figma.currentPage.id;
+    if (lastSelectionKey && currentSelectionKey !== lastSelectionKey) {
+      conversation.clear();
+    }
+    lastSelectionKey = currentSelectionKey;
 
     // Add to conversation history
     conversation.addUserMessage(text);
