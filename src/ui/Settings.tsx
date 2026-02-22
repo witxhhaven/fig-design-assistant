@@ -6,11 +6,13 @@ interface SettingsProps {
   model: string;
   customRules: string;
   defaultCustomRules: string;
+  creativeDesignMode: boolean;
   connectionStatus: "idle" | "testing" | "success" | "error";
   connectionError?: string;
   onSetApiKey: (key: string) => void;
   onSetModel: (model: string) => void;
   onSetCustomRules: (rules: string) => void;
+  onSetCreativeDesignMode: (enabled: boolean) => void;
   onTestConnection: () => void;
   onClose?: () => void;
 }
@@ -27,11 +29,13 @@ export function Settings({
   model,
   customRules,
   defaultCustomRules,
+  creativeDesignMode,
   connectionStatus,
   connectionError,
   onSetApiKey,
   onSetModel,
   onSetCustomRules,
+  onSetCreativeDesignMode,
   onTestConnection,
   onClose,
 }: SettingsProps) {
@@ -122,6 +126,20 @@ export function Settings({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="settings-section">
+        <label className="settings-checkbox-row">
+          <input
+            type="checkbox"
+            checked={creativeDesignMode}
+            onChange={e => onSetCreativeDesignMode(e.target.checked)}
+          />
+          <span className="settings-checkbox-label">Creative Design Mode</span>
+        </label>
+        <p className="settings-hint">
+          When enabled, the AI produces bolder, more distinctive designs instead of safe defaults.
+        </p>
       </div>
 
       <div className="settings-section">

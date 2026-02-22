@@ -29,6 +29,7 @@ function App() {
   const [model, setModel] = useState("claude-sonnet-4-6");
   const [customRules, setCustomRules] = useState("");
   const [defaultCustomRules, setDefaultCustomRules] = useState("");
+  const [creativeDesignMode, setCreativeDesignMode] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(
     null
@@ -59,6 +60,7 @@ function App() {
           setModel(msg.model);
           setCustomRules(msg.customRules || "");
           setDefaultCustomRules(msg.defaultCustomRules || "");
+          setCreativeDesignMode(msg.creativeDesignMode || false);
           if (!msg.hasApiKey) setView("settings");
           break;
 
@@ -243,6 +245,14 @@ function App() {
     );
   }, []);
 
+  const handleSetCreativeDesignMode = useCallback((enabled: boolean) => {
+    setCreativeDesignMode(enabled);
+    parent.postMessage(
+      { pluginMessage: { type: "SET_CREATIVE_DESIGN_MODE", enabled } },
+      "*"
+    );
+  }, []);
+
   if (view === "settings") {
     return (
       <div className="app">
@@ -274,11 +284,13 @@ function App() {
           model={model}
           customRules={customRules}
           defaultCustomRules={defaultCustomRules}
+          creativeDesignMode={creativeDesignMode}
           connectionStatus={connectionStatus}
           connectionError={connectionError}
           onSetApiKey={handleSetApiKey}
           onSetModel={handleSetModel}
           onSetCustomRules={handleSetCustomRules}
+          onSetCreativeDesignMode={handleSetCreativeDesignMode}
           onTestConnection={handleTestConnection}
           onClose={hasApiKey ? () => setView("chat") : undefined}
         />

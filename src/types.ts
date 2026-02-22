@@ -27,13 +27,19 @@ export interface SetModelMsg {
   model: string;
 }
 
+export interface SetCreativeDesignModeMsg {
+  type: "SET_CREATIVE_DESIGN_MODE";
+  enabled: boolean;
+}
+
 export type UIToSandboxMsg =
   | ChatMessageMsg
   | ConfirmMsg
   | CancelMsg
   | SetApiKeyMsg
   | GetSettingsMsg
-  | SetModelMsg;
+  | SetModelMsg
+  | SetCreativeDesignModeMsg;
 
 // ── Sandbox → UI Messages ──
 
@@ -73,6 +79,7 @@ export interface SettingsMsg {
   type: "SETTINGS";
   hasApiKey: boolean;
   model: string;
+  creativeDesignMode: boolean;
 }
 
 export interface ErrorMsg {

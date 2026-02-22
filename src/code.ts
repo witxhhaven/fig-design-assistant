@@ -16,6 +16,7 @@ const DEFAULT_CUSTOM_RULES = `- Always use auto-layout when creating new frames 
 - When creating text, default to Inter Regular 14px unless specified otherwise
 - Prefer using existing local styles and variables when they match what's needed`;
 let customRules = DEFAULT_CUSTOM_RULES;
+let creativeDesignMode = false;
 let pendingResponse: AIResponse | null = null;
 let lastUserRequest = "";
 let lastSelectionKey = "";
@@ -106,6 +107,8 @@ async function loadSettings() {
     (await figma.clientStorage.getAsync("model")) || "claude-sonnet-4-6";
   const savedRules = await figma.clientStorage.getAsync("customRules");
   customRules = savedRules ?? DEFAULT_CUSTOM_RULES;
+  const savedCreativeMode = await figma.clientStorage.getAsync("creativeDesignMode");
+  creativeDesignMode = savedCreativeMode === true;
   figma.ui.postMessage({
     type: "SETTINGS",
     hasApiKey: !!apiKey,
@@ -113,6 +116,7 @@ async function loadSettings() {
     model,
     customRules,
     defaultCustomRules: DEFAULT_CUSTOM_RULES,
+    creativeDesignMode,
   });
 }
 
@@ -169,7 +173,7 @@ figma.ui.onmessage = async (msg: any) => {
     case "SET_API_KEY":
       await figma.clientStorage.setAsync("apiKey", msg.key);
       apiKey = msg.key;
-      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: true, keyPreview: maskKey(apiKey), model, customRules, defaultCustomRules: DEFAULT_CUSTOM_RULES });
+      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: true, keyPreview: maskKey(apiKey), model, customRules, defaultCustomRules: DEFAULT_CUSTOM_RULES, creativeDesignMode });
       break;
 
     case "SET_MODEL":
@@ -182,8 +186,13 @@ figma.ui.onmessage = async (msg: any) => {
       customRules = msg.rules;
       break;
 
+    case "SET_CREATIVE_DESIGN_MODE":
+      await figma.clientStorage.setAsync("creativeDesignMode", msg.enabled);
+      creativeDesignMode = msg.enabled;
+      break;
+
     case "GET_SETTINGS":
-      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: !!apiKey, keyPreview: maskKey(apiKey), model, customRules, defaultCustomRules: DEFAULT_CUSTOM_RULES });
+      figma.ui.postMessage({ type: "SETTINGS", hasApiKey: !!apiKey, keyPreview: maskKey(apiKey), model, customRules, defaultCustomRules: DEFAULT_CUSTOM_RULES, creativeDesignMode });
       break;
 
     case "RESIZE":
@@ -278,7 +287,8 @@ async function handleChatMessage(text: string) {
       apiKey,
       model,
       sceneJson,
-      customRules
+      customRules,
+      creativeDesignMode
     );
 
     conversation.addAssistantMessage(rawResponse);
@@ -306,7 +316,7 @@ async function handleChatMessage(text: string) {
         },
       ];
 
-      const retryResponse = await callClaude(retryMessages, apiKey, model, sceneJson, customRules);
+      const retryResponse = await callClaude(retryMessages, apiKey, model, sceneJson, customRules, creativeDesignMode);
       conversation.addAssistantMessage(retryResponse);
       aiResponse = parseAIResponse(retryResponse);
     }

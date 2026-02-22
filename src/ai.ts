@@ -107,8 +107,9 @@ Text in auto-layout (CRITICAL — prevents single-character-per-line bug):
   Correct order:
   1. Create text, load font, set characters/fontSize
   2. Append to auto-layout parent: frame.appendChild(text)
-  3. text.textAutoResize = "HEIGHT"
-  4. text.layoutSizingHorizontal = "FILL"
+  3. text.layoutSizingHorizontal = "HUG"    // let text establish natural size first
+  4. text.layoutSizingHorizontal = "FILL"   // then stretch to fill parent width
+  5. text.textAutoResize = "HEIGHT"          // height wraps to content
   ALWAYS use this pattern for ANY text node inside an auto-layout frame.
 
 Frames in auto-layout (CRITICAL — prevents squashed/collapsed elements):
@@ -118,6 +119,16 @@ Frames in auto-layout (CRITICAL — prevents squashed/collapsed elements):
   child.layoutSizingHorizontal = "FILL"   // stretch to fill parent width
   child.layoutSizingVertical = "HUG"      // height wraps to content
   For nested auto-layout frames (e.g. cards inside grids), ALL levels must use HUG/FILL — never fixed resize().
+
+CRITICAL — Height sizing for new elements:
+  When creating new auto-layout frames, sections, or components, ALWAYS use layoutSizingVertical = "HUG" on EVERY auto-layout frame in the tree (parent and all children recursively). This ensures content is never clipped.
+  The ONLY exception is the top-level frame placed on the canvas — use resize() for its width, but still set layoutSizingVertical = "HUG" after setting layoutMode so height wraps to content.
+  NEVER use a fixed height (resize(w, h)) on auto-layout frames — it clips content. Always let height be determined by children.
+  Pattern for top-level auto-layout frame:
+    const outer = figma.createFrame()
+    outer.layoutMode = "VERTICAL"
+    outer.resize(1440, 1)              // width only — height is a placeholder
+    outer.layoutSizingVertical = "HUG" // height wraps to content — NEVER skip this
 
 Spacing in auto-layout:
   Do NOT create spacer rectangles for spacing. Use auto-layout's built-in spacing:
@@ -153,6 +164,15 @@ Set sizing (use layoutSizing, NOT primaryAxisSizingMode/counterAxisSizingMode):
   // Setting layoutSizing* on a top-level frame (child of the page) WILL THROW AN ERROR.
   // For top-level frames, use resize() instead. Do NOT set layoutSizing* on them.
   // "FILL" has an extra constraint: the node's PARENT must have layoutMode set.
+  // "HUG" constraints:
+  //   - layoutSizingHorizontal = "HUG" can ONLY be set on frames that have layoutMode set (auto-layout frames).
+  //     It CANNOT be set on plain frames, rectangles, or non-auto-layout children. It WILL THROW AN ERROR.
+  //   - layoutSizingVertical = "HUG" has the same constraint — only on auto-layout frames.
+  //   - For text nodes inside auto-layout: "HUG" IS valid. Best pattern is to set "HUG" first, then switch to "FILL":
+  //       text.layoutSizingHorizontal = "HUG"   // let text establish its natural size first
+  //       text.layoutSizingHorizontal = "FILL"   // then stretch to fill parent width
+  //       text.textAutoResize = "HEIGHT"          // height wraps to content
+  //   - For non-text child nodes (rectangles, ellipses, plain frames without layoutMode): use "FIXED" or "FILL" only. NEVER "HUG".
   // Safe pattern:
   //   const outer = figma.createFrame()
   //   outer.layoutMode = "HORIZONTAL"  // makes it auto-layout
@@ -197,6 +217,54 @@ For any operation that deletes nodes or pages, ALWAYS include a warning:
   "warnings": ["This will permanently delete the 'Footer' frame and its 12 child layers. You can undo with Cmd+Z."]
 }`;
 
+const CREATIVE_DESIGN_PROMPT = `## Creative Design Mode — ACTIVE
+
+CRITICAL: Creative Design Mode is ON. You MUST override all safe/generic defaults. Every new frame, component, or element you create MUST reflect bold, distinctive design choices. Do NOT fall back to plain white backgrounds, default Inter font, or generic gray text. This section OVERRIDES the default styling rules below.
+
+### Mandatory Defaults When Creating New Elements
+When creating ANY new frame, card, section, component, or layout from scratch, ALWAYS apply these instead of generic defaults:
+- Background: Use a rich color — dark (#0F0D1A, #1A1625, #121212), deep blue (#0D1B2A), dark purple (#1E1038), or a bold brand color. NEVER use plain white (#FFFFFF) or light gray (#F5F5F5) as the primary background.
+- Accent colors: Use vibrant, saturated colors for buttons, links, and highlights — electric purple (#7C3AED), vivid blue (#3B82F6), hot pink (#EC4899), orange (#F97316), emerald (#10B981). NEVER use plain gray or muted blue as the only accent.
+- Text on dark backgrounds: Use white (#FFFFFF) or light tints for primary text, and a muted lighter shade (e.g., rgba(255,255,255,0.6)) for secondary text.
+- Corner radius: Use 12-24px for cards and containers, 999px for pill buttons and badges. NEVER use 0px or 4px default corners.
+- Shadows: Add layered shadows for depth — e.g., \`[{type:"DROP_SHADOW", color:{r:0,g:0,b:0,a:0.25}, offset:{x:0,y:4}, radius:12, spread:0, visible:true}]\`
+- Padding: Use generous padding (16-32px). Designs that breathe feel premium.
+- Borders: Use subtle glowing or semi-transparent borders (e.g., rgba(255,255,255,0.1)) instead of harsh solid gray lines.
+
+### Typography — NEVER Use These Fonts
+- BANNED for new designs: Inter, Roboto, Open Sans, Arial, Helvetica, Segoe UI, Noto Sans. These are overused and generic.
+- REQUIRED: Pick from distinctive fonts. For each new design, choose a font pairing:
+  - Modern/clean: DM Sans, Space Grotesk, Sora, Outfit, Manrope, Plus Jakarta Sans, General Sans, Satoshi
+  - Editorial/luxury: Playfair Display, DM Serif Display, Cormorant, Libre Baskerville, Source Serif Pro, Lora
+  - Playful/creative: Fredoka, Nunito, Quicksand, Baloo 2, Comfortaa, Poppins
+- Use a DIFFERENT font for headings vs body text (e.g., DM Serif Display for headings + DM Sans for body)
+- Headings should be large and bold (24-48px, weight 700+). Body text 14-16px.
+- IMPORTANT: Always call figma.loadFontAsync() before setting text. If a preferred font fails to load, fall back to "DM Sans" then "Poppins" — never Inter.
+
+### Visual Hierarchy & Layout
+- Use dramatic size contrast between elements (oversized headings, small labels)
+- Break out of standard grid patterns — try asymmetric layouts, overlapping elements, or unexpected whitespace
+- Create clear focal points — not everything needs equal visual weight
+- Add visual rhythm through alternating section styles
+
+### Color & Depth
+- Use bold, intentional color choices — build a mini palette for each design (1 dark base + 1-2 vibrant accents + neutrals)
+- Add gradients for buttons and hero sections — e.g., linear gradient from #7C3AED to #EC4899
+- Use glassmorphism (semi-transparent backgrounds with blur) or subtle noise textures for modern feel
+- Layer elements with shadows and opacity to create depth
+
+### Shape & Detail
+- Round corners generously (12-24px) for modern feel, or use sharp corners for editorial/bold feel
+- Add decorative elements: accent shapes, subtle divider lines, icon circles, badge pills
+- Use generous spacing — 16-32px gaps, 24-48px section padding
+- Add hover-state-worthy styling: glows, color shifts, scale-ready proportions
+
+### Overall Mandate
+- Design as if this were a portfolio piece or a premium SaaS product
+- NEVER produce a design that looks like an unstyled wireframe or default template
+- Every single property you set (color, font, size, radius, shadow, spacing) should be a deliberate creative choice
+- If the user doesn't specify a style, default to dark/modern/premium — not light/minimal/generic`;
+
 export function getSystemPrompt(): string {
   return SYSTEM_PROMPT;
 }
@@ -206,8 +274,17 @@ export async function callClaude(
   apiKey: string,
   model: string,
   sceneContext?: string,
-  customRules?: string
+  customRules?: string,
+  creativeDesignMode?: boolean
 ): Promise<string> {
+  let systemText = SYSTEM_PROMPT;
+  if (creativeDesignMode) {
+    systemText += "\n\n" + CREATIVE_DESIGN_PROMPT;
+  }
+  if (customRules) {
+    systemText += `\n\n## Custom Rules\n\n${customRules}`;
+  }
+
   const systemBlocks: {
     type: "text";
     text: string;
@@ -215,7 +292,7 @@ export async function callClaude(
   }[] = [
     {
       type: "text",
-      text: SYSTEM_PROMPT + (customRules ? `\n\n## Custom Rules\n\n${customRules}` : ""),
+      text: systemText,
       cache_control: { type: "ephemeral" },
     },
   ];

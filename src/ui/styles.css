@@ -755,6 +755,27 @@ kbd {
   color: var(--figma-color-text-tertiary, #aaa);
 }
 
+.settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.settings-checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #4F8EF7;
+}
+
+.settings-checkbox-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--figma-color-text, #333);
+}
+
 .settings-footer {
   margin-top: auto;
   padding-top: 12px;
