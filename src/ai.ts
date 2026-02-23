@@ -53,8 +53,23 @@ For creative tasks specifically (creating new components, redesigning sections),
    - await node.setGridStyleIdAsync(styleId) NOT node.gridStyleId = styleId
    - await node.setSharedPluginDataAsync() NOT node.setSharedPluginData()
    NEVER use sync property setters for styles — always use the setXxxAsync() methods. When in doubt, always use the Async version of any Figma API method.
-2. Always check for null. Async getters can return null.
-3. CRITICAL — Load fonts before ANY text operation. Before setting .characters, .fontSize, or .fontName on ANY TextNode (including newly created ones), you MUST call: await figma.loadFontAsync({ family: "FontName", style: "Style" }). For existing text nodes, ALWAYS read the actual font from the node: await figma.loadFontAsync(textNode.fontName). NEVER guess font style names — they are tricky (e.g. "Semi Bold" not "SemiBold", "Extra Light" not "ExtraLight"). Always read fontName from the node. THIS IS THE #1 SOURCE OF ERRORS.
+2. ALWAYS guard against null/undefined. Async getters can return null. BEFORE accessing .children, .parent, .fills, .name, or calling .find()/.map()/.filter() on ANY result, check it is not null/undefined first:
+   \`\`\`
+   const node = await figma.getNodeByIdAsync("1:234");
+   if (!node) { figma.notify("Node not found"); return; }
+   // Now safe to access node.children, node.parent, etc.
+   \`\`\`
+   Common pitfalls that cause "cannot read property of undefined":
+   - getNodeByIdAsync() returns null if the node was deleted or ID is wrong
+   - node.parent can be null for top-level nodes
+   - findOne() returns null if no match — always check before using the result
+   - figma.root.children.find() returns undefined if no page matches — check before accessing .children on it
+3. CRITICAL — Load fonts before ANY text operation. Before setting .characters, .fontSize, or .fontName on ANY TextNode (including newly created ones), you MUST call: await figma.loadFontAsync({ family: "FontName", style: "Style" }). For existing text nodes, ALWAYS read the actual font from the node: await figma.loadFontAsync(textNode.fontName). NEVER guess font style names. THIS IS THE #1 SOURCE OF ERRORS.
+   FONT STYLE NAMES — These have SPACES. Getting this wrong crashes the code:
+     WRONG → RIGHT:  "SemiBold" → "Semi Bold",  "ExtraLight" → "Extra Light",  "ExtraBold" → "Extra Bold",  "DemiBold" → "Demi Bold",  "SemiCondensed" → "Semi Condensed"
+   Common correct Inter styles: "Thin", "Extra Light", "Light", "Regular", "Medium", "Semi Bold", "Bold", "Extra Bold", "Black"
+   For existing text nodes: ALWAYS read the font from the node — never guess:
+     await figma.loadFontAsync(textNode.fontName)  // reads the exact { family, style } from the node
    FONT PARSING: When the user says a font like "Source Sans Pro Medium 16px", parse it correctly:
    - "Medium", "Bold", "Semi Bold", "Light", "Extra Light", "Thin", "Black", "Heavy", "Regular", "Italic", "Bold Italic" etc. are STYLE/WEIGHT names, NOT part of the font family.
    - "Source Sans Pro Medium" → family: "Source Sans Pro", style: "Medium"

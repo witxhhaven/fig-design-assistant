@@ -25,12 +25,12 @@ function serializeFills(fills: ReadonlyArray<Paint>, varLookup?: Map<string, str
   });
 }
 
-export function serializeNode(
+export async function serializeNode(
   node: SceneNode,
   depth: number,
   maxDepth: number,
   varLookup?: Map<string, string>
-): SerializedNode {
+): Promise<SerializedNode> {
   const result: SerializedNode = {
     id: node.id,
     name: node.name,
@@ -125,15 +125,18 @@ export function serializeNode(
   // Component / Instance info
   if (node.type === "INSTANCE") {
     const inst = node as InstanceNode;
-    if (inst.mainComponent) result.componentId = inst.mainComponent.id;
+    const mainComp = await inst.getMainComponentAsync();
+    if (mainComp) result.componentId = mainComp.id;
     if (inst.variantProperties) result.variantProperties = inst.variantProperties;
   }
 
   // Children
   if ("children" in node) {
     if (depth < maxDepth) {
-      result.children = (node as any).children.map((child: SceneNode) =>
-        serializeNode(child, depth + 1, maxDepth, varLookup)
+      result.children = await Promise.all(
+        (node as any).children.map((child: SceneNode) =>
+          serializeNode(child, depth + 1, maxDepth, varLookup)
+        )
       );
     } else {
       result.childCount = (node as any).children.length;
@@ -214,11 +217,11 @@ export async function buildSceneContext(): Promise<SceneContext> {
   if (selection.length > 0) {
     scope = "selection";
     scopeDescription = `${selection.length} layer${selection.length > 1 ? "s" : ""} selected`;
-    nodes = selection.map(n => serializeNode(n, 0, 6, varLookup));
+    nodes = await Promise.all(selection.map(n => serializeNode(n, 0, 6, varLookup)));
   } else {
     scope = "page";
     scopeDescription = `Page: ${figma.currentPage.name}`;
-    nodes = figma.currentPage.children.map(n => serializeNode(n as SceneNode, 0, 4, varLookup));
+    nodes = await Promise.all(figma.currentPage.children.map(n => serializeNode(n as SceneNode, 0, 4, varLookup)));
   }
 
   // Token budget check (~1 token per 4 chars, budget ~6000 tokens)
@@ -228,11 +231,11 @@ export async function buildSceneContext(): Promise<SceneContext> {
   if (estimatedTokens > 6000) {
     const reducedMaxDepth = selection.length > 0 ? 4 : 2;
     if (selection.length > 0) {
-      nodes = selection.map(n => serializeNode(n, 0, reducedMaxDepth, varLookup));
+      nodes = await Promise.all(selection.map(n => serializeNode(n, 0, reducedMaxDepth, varLookup)));
     } else {
-      nodes = figma.currentPage.children.map(n =>
+      nodes = await Promise.all(figma.currentPage.children.map(n =>
         serializeNode(n as SceneNode, 0, reducedMaxDepth, varLookup)
-      );
+      ));
     }
   }
 
