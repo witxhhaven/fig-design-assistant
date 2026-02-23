@@ -157,6 +157,12 @@ export interface SceneContext {
   variables?: { collection: string; name: string; type: string; value: any }[];
 }
 
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
+export type MessageContent = string | ContentBlock[];
+
 export interface AIResponse {
   summary: string | null;
   code: string | null;

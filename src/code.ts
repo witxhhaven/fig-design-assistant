@@ -1,7 +1,7 @@
 import { buildSceneContext } from "./scene";
 import { callClaude, parseAIResponse, ConversationManager } from "./ai";
 import { executeWithSafety } from "./executor";
-import { NodeSummary, AIResponse } from "./types";
+import { NodeSummary, AIResponse, MessageContent } from "./types";
 
 // Show UI
 figma.showUI(__html__, { width: 360, height: 600, themeColors: true });
@@ -244,6 +244,49 @@ async function testConnection() {
   }
 }
 
+// ── Image detection + export ──
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i], b = bytes[i + 1] || 0, c = bytes[i + 2] || 0;
+    result += chars[a >> 2] + chars[((a & 3) << 4) | (b >> 4)]
+      + (i + 1 < bytes.length ? chars[((b & 15) << 2) | (c >> 6)] : '=')
+      + (i + 2 < bytes.length ? chars[c & 63] : '=');
+  }
+  return result;
+}
+
+async function exportSelectedImage(): Promise<string | null> {
+  const selection = figma.currentPage.selection;
+  if (selection.length === 0) return null;
+
+  for (const node of selection) {
+    // Check if node has image fills
+    if (!("fills" in node)) continue;
+    const fills = node.fills;
+    if (!Array.isArray(fills)) continue;
+    const hasImage = fills.some(function(f: any) { return f.type === "IMAGE" && f.visible !== false; });
+    if (!hasImage) continue;
+
+    // Determine export scale — cap large images to keep under ~1MB
+    let scale = 1;
+    if (node.width > 2000 || node.height > 2000) {
+      scale = 0.5;
+    }
+
+    const pngBytes = await (node as SceneNode).exportAsync({
+      format: "PNG",
+      constraint: { type: "SCALE", value: scale },
+    });
+
+    return uint8ArrayToBase64(pngBytes);
+  }
+
+  return null;
+}
+
 // ── Chat handler ──
 
 async function handleChatMessage(text: string) {
@@ -278,8 +321,22 @@ async function handleChatMessage(text: string) {
       lastSelectionKey = currentSelectionKey;
     }
 
+    // Export selected image if present
+    const imageBase64 = await exportSelectedImage();
+
+    // Build message content — mixed content if image found, plain string otherwise
+    let userContent: MessageContent;
+    if (imageBase64) {
+      userContent = [
+        { type: "image", source: { type: "base64", media_type: "image/png", data: imageBase64 } },
+        { type: "text", text: text },
+      ];
+    } else {
+      userContent = text;
+    }
+
     // Add to conversation history
-    conversation.addUserMessage(text);
+    conversation.addUserMessage(userContent);
 
     // Call Claude
     const rawResponse = await callClaude(

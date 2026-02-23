@@ -1,4 +1,4 @@
-import { AIResponse } from "./types";
+import { AIResponse, MessageContent } from "./types";
 
 const SYSTEM_PROMPT = `You are an AI assistant embedded in a Figma plugin. You help product designers edit their Figma design files by writing Figma Plugin API JavaScript code.
 
@@ -54,7 +54,27 @@ For creative tasks specifically (creating new components, redesigning sections),
    - await node.setSharedPluginDataAsync() NOT node.setSharedPluginData()
    NEVER use sync property setters for styles — always use the setXxxAsync() methods. When in doubt, always use the Async version of any Figma API method.
 2. Always check for null. Async getters can return null.
-3. CRITICAL — Load fonts before ANY text operation. Before setting .characters, .fontSize, or .fontName on ANY TextNode (including newly created ones), you MUST call: await figma.loadFontAsync({ family: "FontName", style: "Style" }). For new text nodes, ONLY use: await figma.loadFontAsync({ family: "Inter", style: "Regular" }). For existing text nodes, ALWAYS read the actual font from the node: await figma.loadFontAsync(textNode.fontName). NEVER guess font style names — they are tricky (e.g. "Semi Bold" not "SemiBold", "Extra Light" not "ExtraLight"). Always read fontName from the node. THIS IS THE #1 SOURCE OF ERRORS.
+3. CRITICAL — Load fonts before ANY text operation. Before setting .characters, .fontSize, or .fontName on ANY TextNode (including newly created ones), you MUST call: await figma.loadFontAsync({ family: "FontName", style: "Style" }). For existing text nodes, ALWAYS read the actual font from the node: await figma.loadFontAsync(textNode.fontName). NEVER guess font style names — they are tricky (e.g. "Semi Bold" not "SemiBold", "Extra Light" not "ExtraLight"). Always read fontName from the node. THIS IS THE #1 SOURCE OF ERRORS.
+   FONT PARSING: When the user says a font like "Source Sans Pro Medium 16px", parse it correctly:
+   - "Medium", "Bold", "Semi Bold", "Light", "Extra Light", "Thin", "Black", "Heavy", "Regular", "Italic", "Bold Italic" etc. are STYLE/WEIGHT names, NOT part of the font family.
+   - "Source Sans Pro Medium" → family: "Source Sans Pro", style: "Medium"
+   - "Roboto Bold" → family: "Roboto", style: "Bold"
+   - "Inter Semi Bold Italic" → family: "Inter", style: "Semi Bold Italic"
+   - The font family is the name part BEFORE the weight/style keyword. The style is the weight/style keyword(s).
+   FONT FALLBACK: ALWAYS wrap font loading in a try/catch with a fallback. Pattern:
+   \`\`\`
+   let fontFamily = "Source Sans Pro";
+   let fontStyle = "Medium";
+   try {
+     await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
+   } catch {
+     fontFamily = "Inter";
+     fontStyle = "Regular";
+     await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
+   }
+   text.fontName = { family: fontFamily, style: fontStyle };
+   \`\`\`
+   This ensures the code never crashes if a font is unavailable — it gracefully falls back to Inter Regular.
 4. The code runs in an async context. You can use await. The code is wrapped in an async IIFE before execution.
 5. Do NOT call figma.closePlugin(). The plugin stays open for conversation.
 6. Do NOT call figma.commitUndo(). The plugin handles undo batching automatically.
@@ -101,40 +121,44 @@ Create text:
   await figma.loadFontAsync({ family: "Inter", style: "Regular" })
   text.characters = "Hello"
 
-Text in auto-layout (CRITICAL — prevents single-character-per-line bug):
-  "WIDTH_AND_HEIGHT" textAutoResize is INCOMPATIBLE with auto-layout and causes text to collapse to 1 char wide.
-  Do NOT use resize() on text inside auto-layout — it gets overridden.
+## Auto-Layout Sizing (CRITICAL — prevents clipped/squashed elements)
+
+The #1 cause of clipped or collapsed elements is incorrect sizing. Follow these rules strictly:
+
+RULE 1 — NEVER use resize() on any node INSIDE an auto-layout parent. Auto-layout overrides manual sizes.
+  - Use layoutSizingHorizontal and layoutSizingVertical instead.
+  - resize() is ONLY for top-level frames (direct children of the page).
+
+RULE 2 — Every auto-layout frame MUST use layoutSizingVertical = "HUG" so height grows with content.
+  - This applies to ALL auto-layout frames in the tree: parent, children, grandchildren — every level.
+  - NEVER set a fixed height on auto-layout frames — it clips content.
+  - The ONLY exception: the outermost frame on the canvas uses resize(width, 1) for width, then layoutSizingVertical = "HUG".
+
+RULE 3 — For child nodes inside auto-layout, set sizing AFTER appending:
+  parent.appendChild(child)
+  child.layoutSizingHorizontal = "FILL"  // stretch to parent width
+  child.layoutSizingVertical = "HUG"     // height wraps content (auto-layout frames only)
+  // For non-auto-layout children (rectangles, ellipses, plain frames), use "FIXED" not "HUG".
+
+RULE 4 — Text in auto-layout (prevents single-char-per-line bug):
+  "WIDTH_AND_HEIGHT" textAutoResize is INCOMPATIBLE with auto-layout.
   Correct order:
   1. Create text, load font, set characters/fontSize
-  2. Append to auto-layout parent: frame.appendChild(text)
-  3. text.layoutSizingHorizontal = "HUG"    // let text establish natural size first
-  4. text.layoutSizingHorizontal = "FILL"   // then stretch to fill parent width
-  5. text.textAutoResize = "HEIGHT"          // height wraps to content
-  ALWAYS use this pattern for ANY text node inside an auto-layout frame.
+  2. Append to parent: frame.appendChild(text)
+  3. text.layoutSizingHorizontal = "HUG"   // establish natural size
+  4. text.layoutSizingHorizontal = "FILL"  // then fill parent width
+  5. text.textAutoResize = "HEIGHT"         // height wraps content
 
-Frames in auto-layout (CRITICAL — prevents squashed/collapsed elements):
-  Do NOT use resize() to set height on frames inside auto-layout — the height gets overridden.
-  After appending a child frame to an auto-layout parent, set its sizing:
-  parent.appendChild(child)
-  child.layoutSizingHorizontal = "FILL"   // stretch to fill parent width
-  child.layoutSizingVertical = "HUG"      // height wraps to content
-  For nested auto-layout frames (e.g. cards inside grids), ALL levels must use HUG/FILL — never fixed resize().
+RULE 5 — Top-level frame pattern:
+  const outer = figma.createFrame()
+  outer.layoutMode = "VERTICAL"
+  outer.resize(400, 1)              // width only — height placeholder
+  outer.layoutSizingVertical = "HUG" // NEVER skip — prevents clipping
+  outer.itemSpacing = 16
+  outer.paddingTop = 24; outer.paddingBottom = 24
+  outer.paddingLeft = 24; outer.paddingRight = 24
 
-CRITICAL — Height sizing for new elements:
-  When creating new auto-layout frames, sections, or components, ALWAYS use layoutSizingVertical = "HUG" on EVERY auto-layout frame in the tree (parent and all children recursively). This ensures content is never clipped.
-  The ONLY exception is the top-level frame placed on the canvas — use resize() for its width, but still set layoutSizingVertical = "HUG" after setting layoutMode so height wraps to content.
-  NEVER use a fixed height (resize(w, h)) on auto-layout frames — it clips content. Always let height be determined by children.
-  Pattern for top-level auto-layout frame:
-    const outer = figma.createFrame()
-    outer.layoutMode = "VERTICAL"
-    outer.resize(1440, 1)              // width only — height is a placeholder
-    outer.layoutSizingVertical = "HUG" // height wraps to content — NEVER skip this
-
-Spacing in auto-layout:
-  Do NOT create spacer rectangles for spacing. Use auto-layout's built-in spacing:
-  frame.itemSpacing = 16   // gap between children
-  frame.paddingTop = 24    // padding around content
-  If different gaps are needed between specific children, use frame.itemSpacing for the common gap and wrap groups in sub-frames with their own spacing.
+Spacing: Use itemSpacing and padding. Do NOT create spacer rectangles.
 
 Delete node:
   node.remove()
@@ -158,28 +182,10 @@ Set sizing (use layoutSizing, NOT primaryAxisSizingMode/counterAxisSizingMode):
   frame.layoutSizingHorizontal = "FIXED" | "HUG" | "FILL"
   frame.layoutSizingVertical = "FIXED" | "HUG" | "FILL"
   // NEVER use counterAxisSizingMode or primaryAxisSizingMode — they are deprecated.
-  // CRITICAL: layoutSizingHorizontal / layoutSizingVertical can ONLY be set on:
-  //   1. A frame that itself has layoutMode set (auto-layout frame), OR
-  //   2. A node that is ALREADY a child of an auto-layout frame
-  // Setting layoutSizing* on a top-level frame (child of the page) WILL THROW AN ERROR.
-  // For top-level frames, use resize() instead. Do NOT set layoutSizing* on them.
-  // "FILL" has an extra constraint: the node's PARENT must have layoutMode set.
-  // "HUG" constraints:
-  //   - layoutSizingHorizontal = "HUG" can ONLY be set on frames that have layoutMode set (auto-layout frames).
-  //     It CANNOT be set on plain frames, rectangles, or non-auto-layout children. It WILL THROW AN ERROR.
-  //   - layoutSizingVertical = "HUG" has the same constraint — only on auto-layout frames.
-  //   - For text nodes inside auto-layout: "HUG" IS valid. Best pattern is to set "HUG" first, then switch to "FILL":
-  //       text.layoutSizingHorizontal = "HUG"   // let text establish its natural size first
-  //       text.layoutSizingHorizontal = "FILL"   // then stretch to fill parent width
-  //       text.textAutoResize = "HEIGHT"          // height wraps to content
-  //   - For non-text child nodes (rectangles, ellipses, plain frames without layoutMode): use "FIXED" or "FILL" only. NEVER "HUG".
-  // Safe pattern:
-  //   const outer = figma.createFrame()
-  //   outer.layoutMode = "HORIZONTAL"  // makes it auto-layout
-  //   outer.resize(400, 50)            // use resize() for top-level sizing — do NOT use layoutSizing*
-  //   const child = figma.createFrame()
-  //   outer.appendChild(child)         // child is now inside auto-layout
-  //   child.layoutSizingHorizontal = "FILL"  // safe because parent has layoutMode
+  // layoutSizing* can ONLY be set on nodes inside auto-layout OR auto-layout frames themselves.
+  // Top-level frames (children of page): use resize() — do NOT set layoutSizing*.
+  // "FILL" requires parent to have layoutMode set.
+  // "HUG" only works on auto-layout frames and text nodes — NOT on rectangles/ellipses/plain frames.
 
 Set corner radius:
   node.cornerRadius = 8
@@ -195,6 +201,7 @@ Clone node:
 
 Zoom to view:
   figma.viewport.scrollAndZoomIntoView([node])
+
 
 ## Disambiguation
 
@@ -270,7 +277,7 @@ export function getSystemPrompt(): string {
 }
 
 export async function callClaude(
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: MessageContent }[],
   apiKey: string,
   model: string,
   sceneContext?: string,
@@ -356,11 +363,11 @@ export function parseAIResponse(rawText: string): AIResponse {
 }
 
 export class ConversationManager {
-  private history: { role: "user" | "assistant"; content: string }[] = [];
+  private history: { role: "user" | "assistant"; content: MessageContent }[] = [];
   private maxMessages = 14;
 
-  addUserMessage(text: string) {
-    this.history.push({ role: "user", content: text });
+  addUserMessage(content: MessageContent) {
+    this.history.push({ role: "user", content });
     this.trim();
   }
 
