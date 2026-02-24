@@ -43,10 +43,10 @@ User sends message
 | File | Role |
 |------|------|
 | `src/ai.ts` | System prompt + Claude API client + ConversationManager. **Most frequently edited** — this is where all Figma API guidance for Claude lives. |
-| `src/code.ts` | Sandbox entry point. Message routing, session logging, selection tracking, conversation auto-clear on selection change. |
-| `src/scene.ts` | Serializes Figma nodes to JSON. Includes fills with bound variable names, text styles, variables, and an `emptySpot` for placing new designs. |
+| `src/code.ts` | Sandbox entry point. Message routing, session logging, selection tracking, conversation auto-clear on selection change. Detects image fills on selected nodes and exports them as base64 PNG for Claude's vision API. |
+| `src/scene.ts` | Serializes Figma nodes to JSON (async — `serializeNode` returns `Promise<SerializedNode>`). Includes fills with bound variable names, text styles, variables, and an `emptySpot` for placing new designs. |
 | `src/executor.ts` | `eval()` wrapper. Auto-retries font loading errors (up to 3x). Saves version snapshot before destructive operations. |
-| `src/types.ts` | All TypeScript interfaces for messages, serialized nodes, scene context, AI response. |
+| `src/types.ts` | All TypeScript interfaces for messages, serialized nodes, scene context, AI response. Includes `ContentBlock` and `MessageContent` types for mixed text+image messages. |
 
 ### Build Pipeline (esbuild.config.js)
 
@@ -70,21 +70,35 @@ This is the most common source of runtime errors. When adding new Figma API call
 
 The system prompt teaches Claude how to write Figma Plugin API code. Key documented gotchas:
 - Async-only API (see above)
-- Font loading required before any text operation
-- Colors are 0-1 floats, not 0-255
+- Font loading required before any text operation; font style names have spaces (`"Semi Bold"` not `"SemiBold"`)
+- Font loading wrapped in try/catch with fallback to Inter Regular
+- Colors are 0-1 floats, not 0-255. Fills/strokes use `{r,g,b}` + `opacity` on paint; effects use `{r,g,b,a}` (RGBA) — different formats
+- Effects (`DROP_SHADOW`, `INNER_SHADOW`) require `blendMode: "NORMAL"` and all fields
+- `layoutSizingHorizontal`/`layoutSizingVertical` require `layoutMode` to be set first, or the node must be a child of an auto-layout parent — otherwise it throws
 - Text in auto-layout: must use `textAutoResize = "HEIGHT"` + `layoutSizingHorizontal = "FILL"` (not `resize()`)
-- `layoutSizingHorizontal = "FILL"` only works on children of auto-layout frames
+- Always null-check results from `getNodeByIdAsync()`, `findOne()`, `.find()` before accessing properties
 - Scene context includes `boundVariable` names on fills — AI should use these instead of guessing variable names
 - `emptySpot` coordinates tell the AI where to place new designs without overlapping existing content
+- When a reference image is attached, AI matches its colors/styling faithfully
 - Conversation auto-clears when the user switches to a different selection
 
 ## Figma Sandbox Limitations
 
 The Figma plugin sandbox is NOT a full browser environment:
 - No `AbortController` or `AbortSignal`
+- No `btoa` or `atob` — use the inline `uint8ArrayToBase64()` in `code.ts` for base64 encoding
 - Optional chaining (`?.`) not supported (esbuild targets ES2017 for sandbox)
 - No direct DOM access
 - `fetch()` only works for domains listed in `manifest.json` networkAccess
+
+## Image Vision Support
+
+When a selected node has image fills (e.g. a pasted screenshot), `code.ts` automatically exports it as PNG via `exportAsync()`, converts to base64 (using an inline encoder since sandbox lacks `btoa`), and sends it as a vision content block alongside the user's text. This flows through:
+- `code.ts`: `exportSelectedImage()` detects image fills, exports at scale 1 (scale 0.5 if >2000px)
+- `types.ts`: `ContentBlock` type (`text` | `image`), `MessageContent` type alias
+- `ai.ts`: `ConversationManager.addUserMessage()` and `callClaude()` accept `MessageContent` (string or content block array)
+
+No UI changes needed — detection is automatic based on selection.
 
 ## Prompt Caching
 

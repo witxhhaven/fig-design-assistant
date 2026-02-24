@@ -13,6 +13,8 @@ export interface ChatMessage {
 
 interface ChatProps {
   messages: ChatMessage[];
+  inputHistory: string[];
+  onInputHistory: (history: string[]) => void;
   onSendMessage: (text: string) => void;
   onConfirm: () => void;
   onCancel: () => void;
@@ -49,6 +51,8 @@ const THINKING_MESSAGES = [
 
 export function Chat({
   messages,
+  inputHistory,
+  onInputHistory,
   onSendMessage,
   onConfirm,
   onCancel,
@@ -58,7 +62,8 @@ export function Chat({
   hasPendingAction,
 }: ChatProps) {
   const [input, setInput] = useState("");
-  const [history, setHistory] = useState<string[]>([]);
+  const history = inputHistory;
+  const setHistory = onInputHistory;
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draft, setDraft] = useState("");
   const [thinkingMessage, setThinkingMessage] = useState(THINKING_MESSAGES[0]);
@@ -82,6 +87,13 @@ export function Chat({
   useEffect(() => {
     resizeInput();
   }, [input]);
+
+  // Auto-focus input on mount and whenever it becomes enabled
+  useEffect(() => {
+    if (!isThinking && !isExecuting && !hasPendingAction && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isThinking, isExecuting, hasPendingAction]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

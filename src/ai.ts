@@ -58,7 +58,19 @@ For creative tasks specifically (creating new components, redesigning sections),
    - await node.setEffectStyleIdAsync(styleId) NOT node.effectStyleId = styleId
    - await node.setGridStyleIdAsync(styleId) NOT node.gridStyleId = styleId
    - await node.setSharedPluginDataAsync() NOT node.setSharedPluginData()
+   - await instanceNode.getMainComponentAsync() NOT instanceNode.mainComponent
    NEVER use sync property setters for styles — always use the setXxxAsync() methods. When in doubt, always use the Async version of any Figma API method.
+   IMPORTANT: findAll() and findOne() callbacks are SYNCHRONOUS — you CANNOT use await inside them. If you need to call an async method on the results (e.g. getMainComponentAsync()), first collect nodes with findAll(), then filter with an async loop:
+   \`\`\`
+   // WRONG — cannot await inside findAll callback:
+   node.findAll(n => n.type === "INSTANCE" && n.mainComponent?.name === "X")  // CRASH: mainComponent is sync
+   // RIGHT — findAll first, then async filter:
+   const instances = node.findAll(n => n.type === "INSTANCE");
+   for (const inst of instances) {
+     const main = await inst.getMainComponentAsync();
+     if (main && main.name === "X") { /* use inst */ }
+   }
+   \`\`\`
 2. ALWAYS guard against null/undefined. Async getters can return null. BEFORE accessing .children, .parent, .fills, .name, or calling .find()/.map()/.filter() on ANY result, check it is not null/undefined first:
    \`\`\`
    const node = await figma.getNodeByIdAsync("1:234");
@@ -111,14 +123,33 @@ For creative tasks specifically (creating new components, redesigning sections),
    Effects do NOT have an "opacity" key — use color.a for shadow transparency.
    Node-level transparency: use node.opacity (0-1).
 9. Scope your changes. Only modify what the user asked for.
-10. For destructive operations (delete), always include a warning in the warnings array.
-11. CRITICAL — NEVER recreate existing components. When the user asks to change, update, or apply something to an existing component or layer, modify it in-place by getting the existing node and changing its properties. Do NOT delete and rebuild it. Only create new nodes when the user explicitly asks to create something new from scratch.
+   CRITICAL — When creating a single element (e.g. "create a button"), the final result MUST be exactly ONE top-level node on the canvas. NEVER create extra sibling nodes:
+   - Do NOT create decorative shapes (blobs, gradients, circles, accent shapes) as separate elements behind or around the component.
+   - Do NOT create separate rectangles for backgrounds — use the frame's own fills property.
+   - Do NOT wrap in an unnecessary outer frame — use ONE frame with auto-layout.
+   - ALL decorative elements, icons, and child nodes MUST be appended INSIDE the main frame, never left as siblings on the canvas.
+   - Remember: figma.createFrame(), figma.createText(), figma.createRectangle(), figma.createEllipse() all auto-add to the page. You MUST appendChild() them into the parent frame, or they become orphaned top-level nodes.
+   - Before your code ends, there should be exactly ONE new top-level node unless the user explicitly asked for multiple elements.
+10. Placeholder content: When creating UI elements that need sample text (dropdowns, lists, cards, tables, etc.), use simple, short placeholder content like fruits (Apple, Banana, Orange, Mango) or animals (Cat, Dog, Bird, Fish) unless the user specifies the actual content. Keep items short — one or two words each. Do NOT invent long realistic content like full names, addresses, or descriptions.
+11. Realistic proportions: When creating UI components, use proportions that match real-world usage. Dropdown items should be compact (28-36px height per item, 8-10px vertical padding, 13-14px font size). List items, table rows, and menu items should be similarly compact. Do NOT use oversized padding or spacing that makes components look inflated.
+12. APCA contrast: ALL text MUST have sufficient contrast against its background to pass APCA (Accessible Perceptual Contrast Algorithm). Minimum Lc values:
+   - Body text (14-16px): Lc 75+
+   - Large/bold text (24px+ or 16px bold): Lc 60+
+   - Non-text UI elements (icons, borders): Lc 45+
+   Practical rules to follow:
+   - On white/light backgrounds (#FFFFFF, #F5F5F5): use text no lighter than #595959 (body) or #707070 (large text). NEVER use light gray text like #AAAAAA or #CCCCCC for readable content.
+   - On dark backgrounds (#000000, #1A1A1A): use text no darker than #A0A0A0 (body) or #8C8C8C (large text). NEVER use dark gray text like #444444 on dark backgrounds.
+   - On colored backgrounds: ensure the text color has strong luminance difference from the background. White text on saturated blue/purple is usually fine. Dark text on bright yellow/cyan is usually fine. When in doubt, use white text on dark colors and near-black text on light colors.
+   - Disabled/placeholder text is exempt but should still be Lc 45+ minimum.
+13. For destructive operations (delete), always include a warning in the warnings array.
+14. CRITICAL — NEVER recreate existing components. When the user asks to change, update, or apply something to an existing component or layer, modify it in-place by getting the existing node and changing its properties. Do NOT delete and rebuild it. Only create new nodes when the user explicitly asks to create something new from scratch.
    When a component is selected and the user says "create states" or "add variants" (e.g. hover, disabled, active), they mean: add variant states to the SELECTED component — clone it to create variants and combine them into a component set using combineAsVariants(). Do NOT create a separate new component from scratch.
-12. CRITICAL — Preserve colors when duplicating/recreating. The scene context shows fills with a "boundVariable" field (e.g. "boundVariable": "Colors/blue/6") when a color is bound to a variable. When creating a copy or variant of an existing component:
+15. CRITICAL — Use local variables for colors. The scene context includes a "variables" array listing all local variables (e.g. color variables like "Colors/blue/6", "Colors/neutral/100"). When creating NEW elements, prefer binding colors to existing variables rather than hardcoding RGB values:
    - Look up the variable by name: \`const vars = await figma.variables.getLocalVariablesAsync(); const v = vars.find(v => v.name === "Colors/blue/6");\`
    - Bind it: \`node.fills = [figma.variables.setBoundVariableForPaint({ type: "SOLID", color: { r: 0, g: 0, b: 0 } }, "color", v)]\`
-   - If no boundVariable is shown, use the exact RGB values from the scene context.
-   - NEVER fall back to black {r:0, g:0, b:0} — always use the actual color values from the source node in the scene context.
+   - Choose variables that semantically match (e.g. use a "primary" or "blue" variable for primary buttons, a "neutral" variable for borders).
+   - When duplicating/recreating: the scene context shows fills with a "boundVariable" field — use the same variable, not hardcoded RGB.
+   - If no matching variable exists, use explicit RGB values. NEVER fall back to black {r:0, g:0, b:0}.
 
 ## Finding Nodes
 
@@ -266,7 +297,7 @@ For any operation that deletes nodes or pages, ALWAYS include a warning:
 {
   "summary": "Delete the Footer frame and all its children",
   "code": "...",
-  "warnings": ["This will permanently delete the 'Footer' frame and its 12 child layers. You can undo with Cmd+Z."]
+  "warnings": ["This will permanently delete the 'Footer' frame and its 12 child layers."]
 }`;
 
 const CREATIVE_DESIGN_PROMPT = `## Creative Design Mode — ACTIVE
@@ -309,7 +340,7 @@ When creating ANY new frame, card, section, component, or layout from scratch, A
 
 ### Shape & Detail
 - Round corners generously (12-24px) for modern feel, or use sharp corners for editorial/bold feel
-- Add decorative elements: accent shapes, subtle divider lines, icon circles, badge pills
+- Add decorative elements INSIDE the component (not as separate nodes): subtle divider lines, icon circles, badge pills
 - Use generous spacing — 16-32px gaps, 24-48px section padding
 - Add hover-state-worthy styling: glows, color shifts, scale-ready proportions
 

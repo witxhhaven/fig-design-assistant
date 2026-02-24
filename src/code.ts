@@ -473,7 +473,7 @@ async function handleConfirm() {
     });
     figma.ui.postMessage({
       type: "EXECUTION_ERROR",
-      error: `The code hit an error: ${result.error}. Partial changes can be undone with Cmd+Z.`,
+      error: `The code hit an error: ${result.error}`,
     });
   }
 }

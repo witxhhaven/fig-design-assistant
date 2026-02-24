@@ -40,6 +40,7 @@ function App() {
   const [connectionError, setConnectionError] = useState<string | undefined>();
   const [showHelp, setShowHelp] = useState(false);
   const [chatKey, setChatKey] = useState(0);
+  const [inputHistory, setInputHistory] = useState<string[]>([]);
   const helpRef = useRef<HTMLDivElement>(null);
 
   // Listen for messages from sandbox
@@ -366,6 +367,8 @@ function App() {
       <Chat
         key={chatKey}
         messages={messages}
+        inputHistory={inputHistory}
+        onInputHistory={setInputHistory}
         onSendMessage={sendMessage}
         onConfirm={handleConfirm}
         onCancel={handleCancel}
