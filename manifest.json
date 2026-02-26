@@ -1,6 +1,6 @@
 {
-  "name": "AI Design Copilot",
-  "id": "ai-design-copilot-001",
+  "name": "Figma Copilot (alpha)",
+  "id": "figma-copilot-001",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",
